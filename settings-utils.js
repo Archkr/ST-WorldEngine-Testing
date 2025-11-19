@@ -7,6 +7,13 @@ export const DEFAULT_SETTINGS = {
     showInstructions: true,
     timeOfDay: 12,
     weather: 'clear',
+    cameraFov: 60,
+    mouseSensitivity: 1.0,
+    shadowsEnabled: true,
+    renderScale: 1.0,
+    showChatBubbles: true,
+    rainIntensity: 1.0,
+    fogDensity: 1.0,
 };
 
 const EXTENSION_BASE_URL = new URL('.', import.meta.url);
@@ -24,6 +31,13 @@ export function buildViewUrl(settings) {
     url.searchParams.set('showInstructions', String(Boolean(settings.showInstructions ?? DEFAULT_SETTINGS.showInstructions)));
     url.searchParams.set('timeOfDay', String(settings.timeOfDay ?? DEFAULT_SETTINGS.timeOfDay));
     url.searchParams.set('weather', String(settings.weather ?? DEFAULT_SETTINGS.weather));
+    url.searchParams.set('fov', String(settings.cameraFov ?? DEFAULT_SETTINGS.cameraFov));
+    url.searchParams.set('mouseSensitivity', String(settings.mouseSensitivity ?? DEFAULT_SETTINGS.mouseSensitivity));
+    url.searchParams.set('shadowsEnabled', String(Boolean(settings.shadowsEnabled ?? DEFAULT_SETTINGS.shadowsEnabled)));
+    url.searchParams.set('renderScale', String(settings.renderScale ?? DEFAULT_SETTINGS.renderScale));
+    url.searchParams.set('showChatBubbles', String(Boolean(settings.showChatBubbles ?? DEFAULT_SETTINGS.showChatBubbles)));
+    url.searchParams.set('rainIntensity', String(settings.rainIntensity ?? DEFAULT_SETTINGS.rainIntensity));
+    url.searchParams.set('fogDensity', String(settings.fogDensity ?? DEFAULT_SETTINGS.fogDensity));
     return url.toString();
 }
 

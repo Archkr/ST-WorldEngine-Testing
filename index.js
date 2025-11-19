@@ -12,6 +12,11 @@ const CHAT_ROLE_ASSISTANT = 'assistant';
 const CHAT_SYNC_POLL_INTERVAL = 5000;
 const CHAT_SYNC_HISTORY_LIMIT = 24;
 const IFRAME_LOAD_TIMEOUT_MS = 10000;
+const CAMERA_FOV_RANGE = [40, 100];
+const MOUSE_SENSITIVITY_RANGE = [0.2, 3];
+const RENDER_SCALE_RANGE = [0.5, 1.5];
+const RAIN_INTENSITY_RANGE = [0, 2];
+const FOG_DENSITY_RANGE = [0.2, 3];
 
 const trackedFrameOrigins = new WeakMap();
 
@@ -32,6 +37,32 @@ function clampTimeOfDayValue(value) {
     return Math.min(24, Math.max(0, numeric));
 }
 
+function clampInRange(value, [min, max], fallback) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.min(max, Math.max(min, numeric));
+}
+
+function clampFovValue(value) {
+    return clampInRange(value, CAMERA_FOV_RANGE, DEFAULT_SETTINGS.cameraFov);
+}
+
+function clampMouseSensitivity(value) {
+    return clampInRange(value, MOUSE_SENSITIVITY_RANGE, DEFAULT_SETTINGS.mouseSensitivity);
+}
+
+function clampRenderScale(value) {
+    return clampInRange(value, RENDER_SCALE_RANGE, DEFAULT_SETTINGS.renderScale);
+}
+
+function clampRainIntensity(value) {
+    return clampInRange(value, RAIN_INTENSITY_RANGE, DEFAULT_SETTINGS.rainIntensity);
+}
+
+function clampFogDensity(value) {
+    return clampInRange(value, FOG_DENSITY_RANGE, DEFAULT_SETTINGS.fogDensity);
+}
+
 function formatTimeOfDayLabel(value) {
     const clamped = clampTimeOfDayValue(value);
     const normalized = clamped >= 24 ? 0 : clamped;
@@ -44,6 +75,22 @@ function formatTimeOfDayLabel(value) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+function formatFovLabel(value) {
+    return `${Math.round(clampFovValue(value))}°`;
+}
+
+function formatSensitivityLabel(value) {
+    return `${clampMouseSensitivity(value).toFixed(2)}x`;
+}
+
+function formatRenderScaleLabel(value) {
+    return `${Math.round(clampRenderScale(value) * 100)}%`;
+}
+
+function formatWeatherScalarLabel(value) {
+    return `${Number(value || 0).toFixed(2)}x`;
+}
+
 function normalizeWeatherValue(value) {
     if (typeof value !== 'string') return DEFAULT_SETTINGS.weather;
     const normalized = value.toLowerCase();
@@ -54,6 +101,13 @@ function normalizeAtmosphereSettings(settings) {
     if (!settings) return settings;
     settings.timeOfDay = clampTimeOfDayValue(settings.timeOfDay ?? DEFAULT_SETTINGS.timeOfDay);
     settings.weather = normalizeWeatherValue(settings.weather ?? DEFAULT_SETTINGS.weather);
+    settings.cameraFov = clampFovValue(settings.cameraFov ?? DEFAULT_SETTINGS.cameraFov);
+    settings.mouseSensitivity = clampMouseSensitivity(settings.mouseSensitivity ?? DEFAULT_SETTINGS.mouseSensitivity);
+    settings.shadowsEnabled = Boolean(settings.shadowsEnabled ?? DEFAULT_SETTINGS.shadowsEnabled);
+    settings.renderScale = clampRenderScale(settings.renderScale ?? DEFAULT_SETTINGS.renderScale);
+    settings.showChatBubbles = Boolean(settings.showChatBubbles ?? DEFAULT_SETTINGS.showChatBubbles);
+    settings.rainIntensity = clampRainIntensity(settings.rainIntensity ?? DEFAULT_SETTINGS.rainIntensity);
+    settings.fogDensity = clampFogDensity(settings.fogDensity ?? DEFAULT_SETTINGS.fogDensity);
     return settings;
 }
 
@@ -456,6 +510,53 @@ async function openWorldEnginePopup() {
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
+    dialog.on('input', '#world_engine_fov', async (event) => {
+        settings.cameraFov = clampFovValue(event.target.value);
+        dialog.find('#world_engine_fov_value').text(formatFovLabel(settings.cameraFov));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_sensitivity', async (event) => {
+        settings.mouseSensitivity = clampMouseSensitivity(event.target.value);
+        dialog.find('#world_engine_sensitivity_value').text(formatSensitivityLabel(settings.mouseSensitivity));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_render_scale', async (event) => {
+        settings.renderScale = clampRenderScale(event.target.value);
+        dialog.find('#world_engine_render_scale_value').text(formatRenderScaleLabel(settings.renderScale));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('change', '#world_engine_shadows', async (event) => {
+        settings.shadowsEnabled = Boolean(event.target.checked);
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('change', '#world_engine_show_chat_bubble', async (event) => {
+        settings.showChatBubbles = Boolean(event.target.checked);
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_rain_intensity', async (event) => {
+        settings.rainIntensity = clampRainIntensity(event.target.value);
+        dialog.find('#world_engine_rain_intensity_value').text(formatWeatherScalarLabel(settings.rainIntensity));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_fog_density', async (event) => {
+        settings.fogDensity = clampFogDensity(event.target.value);
+        dialog.find('#world_engine_fog_density_value').text(formatWeatherScalarLabel(settings.fogDensity));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
     dialog.find('#world_engine_speed').val(settings.movementSpeed);
     dialog.find('#world_engine_speed_value').text(`${settings.movementSpeed.toFixed(1)}x`);
     dialog.find('#world_engine_invert_look').prop('checked', settings.invertLook);
@@ -463,6 +564,18 @@ async function openWorldEnginePopup() {
     dialog.find('#world_engine_time_of_day').val(settings.timeOfDay);
     dialog.find('#world_engine_time_value').text(formatTimeOfDayLabel(settings.timeOfDay));
     dialog.find('#world_engine_weather').val(settings.weather);
+    dialog.find('#world_engine_fov').val(settings.cameraFov);
+    dialog.find('#world_engine_fov_value').text(formatFovLabel(settings.cameraFov));
+    dialog.find('#world_engine_sensitivity').val(settings.mouseSensitivity);
+    dialog.find('#world_engine_sensitivity_value').text(formatSensitivityLabel(settings.mouseSensitivity));
+    dialog.find('#world_engine_render_scale').val(settings.renderScale);
+    dialog.find('#world_engine_render_scale_value').text(formatRenderScaleLabel(settings.renderScale));
+    dialog.find('#world_engine_shadows').prop('checked', settings.shadowsEnabled);
+    dialog.find('#world_engine_show_chat_bubble').prop('checked', settings.showChatBubbles);
+    dialog.find('#world_engine_rain_intensity').val(settings.rainIntensity);
+    dialog.find('#world_engine_rain_intensity_value').text(formatWeatherScalarLabel(settings.rainIntensity));
+    dialog.find('#world_engine_fog_density').val(settings.fogDensity);
+    dialog.find('#world_engine_fog_density_value').text(formatWeatherScalarLabel(settings.fogDensity));
 
     dialog.on('click', '.world-engine-retry-button', (event) => {
         event.preventDefault();
@@ -521,8 +634,20 @@ function setupSettingsPanel(root) {
     const timeSlider = root.querySelector('#world_engine_time_of_day');
     const timeValue = root.querySelector('#world_engine_time_value');
     const weatherSelect = root.querySelector('#world_engine_weather');
+    const fovSlider = root.querySelector('#world_engine_fov');
+    const fovValue = root.querySelector('#world_engine_fov_value');
+    const sensitivitySlider = root.querySelector('#world_engine_sensitivity');
+    const sensitivityValue = root.querySelector('#world_engine_sensitivity_value');
+    const renderScaleSlider = root.querySelector('#world_engine_render_scale');
+    const renderScaleValue = root.querySelector('#world_engine_render_scale_value');
     const invertCheckbox = root.querySelector('#world_engine_invert_look');
+    const shadowsCheckbox = root.querySelector('#world_engine_shadows');
     const instructionsCheckbox = root.querySelector('#world_engine_show_instructions');
+    const chatBubbleCheckbox = root.querySelector('#world_engine_show_chat_bubble');
+    const rainIntensitySlider = root.querySelector('#world_engine_rain_intensity');
+    const rainIntensityValue = root.querySelector('#world_engine_rain_intensity_value');
+    const fogDensitySlider = root.querySelector('#world_engine_fog_density');
+    const fogDensityValue = root.querySelector('#world_engine_fog_density_value');
     const maximizeButton = root.querySelector('#world_engine_maximize');
     const maximizeIcon = maximizeButton?.querySelector('.fa-solid');
     const maximizeLabel = maximizeButton?.querySelector('.world-engine-maximize-label');
@@ -567,10 +692,22 @@ function setupSettingsPanel(root) {
         if (speedInput) speedInput.value = settings.movementSpeed;
         if (speedValue) speedValue.textContent = `${settings.movementSpeed.toFixed(1)}x`;
         if (invertCheckbox) invertCheckbox.checked = Boolean(settings.invertLook);
+        if (shadowsCheckbox) shadowsCheckbox.checked = Boolean(settings.shadowsEnabled);
         if (instructionsCheckbox) instructionsCheckbox.checked = Boolean(settings.showInstructions);
+        if (chatBubbleCheckbox) chatBubbleCheckbox.checked = Boolean(settings.showChatBubbles);
         if (timeSlider) timeSlider.value = settings.timeOfDay;
         if (timeValue) timeValue.textContent = formatTimeOfDayLabel(settings.timeOfDay);
         if (weatherSelect) weatherSelect.value = settings.weather;
+        if (fovSlider) fovSlider.value = settings.cameraFov;
+        if (fovValue) fovValue.textContent = formatFovLabel(settings.cameraFov);
+        if (sensitivitySlider) sensitivitySlider.value = settings.mouseSensitivity;
+        if (sensitivityValue) sensitivityValue.textContent = formatSensitivityLabel(settings.mouseSensitivity);
+        if (renderScaleSlider) renderScaleSlider.value = settings.renderScale;
+        if (renderScaleValue) renderScaleValue.textContent = formatRenderScaleLabel(settings.renderScale);
+        if (rainIntensitySlider) rainIntensitySlider.value = settings.rainIntensity;
+        if (rainIntensityValue) rainIntensityValue.textContent = formatWeatherScalarLabel(settings.rainIntensity);
+        if (fogDensitySlider) fogDensitySlider.value = settings.fogDensity;
+        if (fogDensityValue) fogDensityValue.textContent = formatWeatherScalarLabel(settings.fogDensity);
     };
 
     const pushSettingsToFrame = async () => {
@@ -638,8 +775,36 @@ function setupSettingsPanel(root) {
         pushSettingsToFrame();
     });
 
+    fovSlider?.addEventListener('input', (event) => {
+        settings.cameraFov = clampFovValue(event.target.value);
+        if (fovValue) fovValue.textContent = formatFovLabel(settings.cameraFov);
+        pushSettingsToFrame();
+    });
+
+    sensitivitySlider?.addEventListener('input', (event) => {
+        settings.mouseSensitivity = clampMouseSensitivity(event.target.value);
+        if (sensitivityValue) sensitivityValue.textContent = formatSensitivityLabel(settings.mouseSensitivity);
+        pushSettingsToFrame();
+    });
+
+    renderScaleSlider?.addEventListener('input', (event) => {
+        settings.renderScale = clampRenderScale(event.target.value);
+        if (renderScaleValue) renderScaleValue.textContent = formatRenderScaleLabel(settings.renderScale);
+        pushSettingsToFrame();
+    });
+
     instructionsCheckbox?.addEventListener('change', (event) => {
         settings.showInstructions = Boolean(event.target.checked);
+        pushSettingsToFrame();
+    });
+
+    shadowsCheckbox?.addEventListener('change', (event) => {
+        settings.shadowsEnabled = Boolean(event.target.checked);
+        pushSettingsToFrame();
+    });
+
+    chatBubbleCheckbox?.addEventListener('change', (event) => {
+        settings.showChatBubbles = Boolean(event.target.checked);
         pushSettingsToFrame();
     });
 
@@ -651,6 +816,18 @@ function setupSettingsPanel(root) {
 
     weatherSelect?.addEventListener('change', (event) => {
         settings.weather = normalizeWeatherValue(event.target.value);
+        pushSettingsToFrame();
+    });
+
+    rainIntensitySlider?.addEventListener('input', (event) => {
+        settings.rainIntensity = clampRainIntensity(event.target.value);
+        if (rainIntensityValue) rainIntensityValue.textContent = formatWeatherScalarLabel(settings.rainIntensity);
+        pushSettingsToFrame();
+    });
+
+    fogDensitySlider?.addEventListener('input', (event) => {
+        settings.fogDensity = clampFogDensity(event.target.value);
+        if (fogDensityValue) fogDensityValue.textContent = formatWeatherScalarLabel(settings.fogDensity);
         pushSettingsToFrame();
     });
 
