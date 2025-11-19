@@ -17,6 +17,8 @@ const MOUSE_SENSITIVITY_RANGE = [0.2, 3];
 const RENDER_SCALE_RANGE = [0.5, 1.5];
 const RAIN_INTENSITY_RANGE = [0, 2];
 const FOG_DENSITY_RANGE = [0.2, 3];
+const CLOUD_DENSITY_RANGE = [0, 2];
+const CLOUD_SPEED_RANGE = [0, 2];
 
 const trackedFrameOrigins = new WeakMap();
 
@@ -61,6 +63,14 @@ function clampRainIntensity(value) {
 
 function clampFogDensity(value) {
     return clampInRange(value, FOG_DENSITY_RANGE, DEFAULT_SETTINGS.fogDensity);
+}
+
+function clampCloudDensity(value) {
+    return clampInRange(value, CLOUD_DENSITY_RANGE, DEFAULT_SETTINGS.cloudDensity);
+}
+
+function clampCloudSpeed(value) {
+    return clampInRange(value, CLOUD_SPEED_RANGE, DEFAULT_SETTINGS.cloudSpeed);
 }
 
 function formatTimeOfDayLabel(value) {
@@ -108,6 +118,9 @@ function normalizeAtmosphereSettings(settings) {
     settings.showChatBubbles = Boolean(settings.showChatBubbles ?? DEFAULT_SETTINGS.showChatBubbles);
     settings.rainIntensity = clampRainIntensity(settings.rainIntensity ?? DEFAULT_SETTINGS.rainIntensity);
     settings.fogDensity = clampFogDensity(settings.fogDensity ?? DEFAULT_SETTINGS.fogDensity);
+    settings.cloudsEnabled = Boolean(settings.cloudsEnabled ?? DEFAULT_SETTINGS.cloudsEnabled);
+    settings.cloudDensity = clampCloudDensity(settings.cloudDensity ?? DEFAULT_SETTINGS.cloudDensity);
+    settings.cloudSpeed = clampCloudSpeed(settings.cloudSpeed ?? DEFAULT_SETTINGS.cloudSpeed);
     return settings;
 }
 
@@ -550,6 +563,26 @@ async function openWorldEnginePopup() {
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
+    dialog.on('change', '#world_engine_enable_clouds', async (event) => {
+        settings.cloudsEnabled = Boolean(event.target.checked);
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_cloud_density', async (event) => {
+        settings.cloudDensity = clampCloudDensity(event.target.value);
+        dialog.find('#world_engine_cloud_density_value').text(formatWeatherScalarLabel(settings.cloudDensity));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('input', '#world_engine_cloud_speed', async (event) => {
+        settings.cloudSpeed = clampCloudSpeed(event.target.value);
+        dialog.find('#world_engine_cloud_speed_value').text(formatWeatherScalarLabel(settings.cloudSpeed));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
     dialog.on('input', '#world_engine_fog_density', async (event) => {
         settings.fogDensity = clampFogDensity(event.target.value);
         dialog.find('#world_engine_fog_density_value').text(formatWeatherScalarLabel(settings.fogDensity));
@@ -648,6 +681,11 @@ function setupSettingsPanel(root) {
     const rainIntensityValue = root.querySelector('#world_engine_rain_intensity_value');
     const fogDensitySlider = root.querySelector('#world_engine_fog_density');
     const fogDensityValue = root.querySelector('#world_engine_fog_density_value');
+    const cloudsToggle = root.querySelector('#world_engine_enable_clouds');
+    const cloudDensitySlider = root.querySelector('#world_engine_cloud_density');
+    const cloudDensityValue = root.querySelector('#world_engine_cloud_density_value');
+    const cloudSpeedSlider = root.querySelector('#world_engine_cloud_speed');
+    const cloudSpeedValue = root.querySelector('#world_engine_cloud_speed_value');
     const maximizeButton = root.querySelector('#world_engine_maximize');
     const maximizeIcon = maximizeButton?.querySelector('.fa-solid');
     const maximizeLabel = maximizeButton?.querySelector('.world-engine-maximize-label');
@@ -708,6 +746,11 @@ function setupSettingsPanel(root) {
         if (rainIntensityValue) rainIntensityValue.textContent = formatWeatherScalarLabel(settings.rainIntensity);
         if (fogDensitySlider) fogDensitySlider.value = settings.fogDensity;
         if (fogDensityValue) fogDensityValue.textContent = formatWeatherScalarLabel(settings.fogDensity);
+        if (cloudsToggle) cloudsToggle.checked = Boolean(settings.cloudsEnabled);
+        if (cloudDensitySlider) cloudDensitySlider.value = settings.cloudDensity;
+        if (cloudDensityValue) cloudDensityValue.textContent = formatWeatherScalarLabel(settings.cloudDensity);
+        if (cloudSpeedSlider) cloudSpeedSlider.value = settings.cloudSpeed;
+        if (cloudSpeedValue) cloudSpeedValue.textContent = formatWeatherScalarLabel(settings.cloudSpeed);
     };
 
     const pushSettingsToFrame = async () => {
