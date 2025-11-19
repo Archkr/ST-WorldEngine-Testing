@@ -8,6 +8,10 @@
     
     <div class="world-engine-iframe-wrapper">
         <iframe id="world_engine_iframe" class="world-engine-iframe" src="{{src}}" title="World Engine" allowfullscreen></iframe>
+        <div class="world-engine-iframe-error is-hidden" role="alert">
+            <p class="world-engine-error-text" data-i18n="We couldn't load the World Engine.">We couldn't load the World Engine.</p>
+            <button type="button" class="world-engine-retry-button menu_button" data-i18n="Retry">Retry</button>
+        </div>
     </div>
 
     <div class="world-engine-settings" id="world_engine_settings">

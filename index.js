@@ -11,6 +11,7 @@ const CHAT_ROLE_USER = 'user';
 const CHAT_ROLE_ASSISTANT = 'assistant';
 const CHAT_SYNC_POLL_INTERVAL = 5000;
 const CHAT_SYNC_HISTORY_LIMIT = 24;
+const IFRAME_LOAD_TIMEOUT_MS = 10000;
 
 const trackedFrameOrigins = new WeakMap();
 
@@ -338,12 +339,55 @@ async function openWorldEnginePopup() {
     const viewUrl = buildViewUrl(settings);
     const template = await renderWorldEngineTemplate('window', { src: viewUrl });
     const dialog = $(template);
+    const iframe = dialog.find('#world_engine_iframe')[0];
+    const iframeWrapper = dialog.find('.world-engine-iframe-wrapper');
+    const iframeError = dialog.find('.world-engine-iframe-error');
+    let iframeLoadTimer = null;
+
+    const clearIframeLoadTimer = () => {
+        if (iframeLoadTimer) {
+            clearTimeout(iframeLoadTimer);
+            iframeLoadTimer = null;
+        }
+    };
+
+    const showIframeError = () => {
+        iframeWrapper?.addClass('has-error');
+        iframeError?.removeClass('is-hidden');
+    };
+
+    const hideIframeError = () => {
+        iframeWrapper?.removeClass('has-error');
+        iframeError?.addClass('is-hidden');
+    };
+
+    const beginIframeLoadWatch = (reload = false) => {
+        if (!iframe) return;
+        hideIframeError();
+        clearIframeLoadTimer();
+        iframeLoadTimer = window.setTimeout(() => {
+            console.warn('[World Engine] Popup iframe load timed out.');
+            showIframeError();
+        }, IFRAME_LOAD_TIMEOUT_MS);
+
+        if (reload) {
+            iframe.src = buildViewUrl(settings);
+            trackWorldEngineFrame(iframe);
+        }
+    };
 
     dialog.on('load', '#world_engine_iframe', (event) => {
+        clearIframeLoadTimer();
+        hideIframeError();
         trackWorldEngineFrame(event.target);
         const frameWindow = event.target?.contentWindow;
         sendSettingsToFrame(frameWindow, settings);
         syncChatHistory(frameWindow);
+    });
+
+    dialog.on('error', '#world_engine_iframe', () => {
+        clearIframeLoadTimer();
+        showIframeError();
     });
 
     dialog.on('input', '#world_engine_speed', async (event) => {
@@ -370,6 +414,13 @@ async function openWorldEnginePopup() {
     dialog.find('#world_engine_speed_value').text(`${settings.movementSpeed.toFixed(1)}x`);
     dialog.find('#world_engine_invert_look').prop('checked', settings.invertLook);
     dialog.find('#world_engine_show_instructions').prop('checked', settings.showInstructions);
+
+    dialog.on('click', '.world-engine-retry-button', (event) => {
+        event.preventDefault();
+        beginIframeLoadWatch(true);
+    });
+
+    beginIframeLoadWatch(false);
 
     callGenericPopup(dialog, POPUP_TYPE.TEXT, 'World Engine', { wide: true, large: true, allowVerticalScrolling: false });
 }
@@ -414,6 +465,8 @@ function setupSettingsPanel(root) {
     const iframe = root.querySelector('#world_engine_iframe');
     trackWorldEngineFrame(iframe);
     const iframeWrapper = root.querySelector('.world-engine-iframe-wrapper');
+    const iframeError = root.querySelector('.world-engine-iframe-error');
+    const retryButton = root.querySelector('.world-engine-retry-button');
     const speedInput = root.querySelector('#world_engine_speed');
     const speedValue = root.querySelector('#world_engine_speed_value');
     const invertCheckbox = root.querySelector('#world_engine_invert_look');
@@ -426,12 +479,36 @@ function setupSettingsPanel(root) {
     const iframeWrapperPlaceholder = document.createComment('world-engine-iframe-placeholder');
     const iframeWrapperNextSibling = iframeWrapper?.nextSibling || null;
     let isMaximized = false;
+    let iframeLoadTimer = null;
+
+    const clearIframeLoadTimer = () => {
+        if (iframeLoadTimer) {
+            clearTimeout(iframeLoadTimer);
+            iframeLoadTimer = null;
+        }
+    };
+
+    const showIframeError = () => {
+        iframeWrapper?.classList.add('has-error');
+        iframeError?.classList.remove('is-hidden');
+    };
+
+    const hideIframeError = () => {
+        iframeWrapper?.classList.remove('has-error');
+        iframeError?.classList.add('is-hidden');
+    };
 
     const updateIframeSrc = () => {
-        if (iframe) {
-            iframe.src = buildViewUrl(settings);
-            trackWorldEngineFrame(iframe);
-        }
+        if (!iframe) return;
+        hideIframeError();
+        clearIframeLoadTimer();
+        iframeLoadTimer = window.setTimeout(() => {
+            console.warn('[World Engine] Settings iframe load timed out.');
+            showIframeError();
+        }, IFRAME_LOAD_TIMEOUT_MS);
+
+        iframe.src = buildViewUrl(settings);
+        trackWorldEngineFrame(iframe);
     };
 
     const syncControls = () => {
@@ -521,9 +598,21 @@ function setupSettingsPanel(root) {
     });
 
     iframe?.addEventListener('load', () => {
+        clearIframeLoadTimer();
+        hideIframeError();
         trackWorldEngineFrame(iframe);
         sendSettingsToFrame(iframe.contentWindow, settings);
         syncChatHistory(iframe.contentWindow);
+    });
+
+    iframe?.addEventListener('error', () => {
+        clearIframeLoadTimer();
+        showIframeError();
+    });
+
+    retryButton?.addEventListener('click', (event) => {
+        event.preventDefault();
+        updateIframeSrc();
     });
 
     root.dataset.initialized = 'true';
