@@ -12,6 +12,8 @@ const CHAT_ROLE_ASSISTANT = 'assistant';
 const CHAT_SYNC_POLL_INTERVAL = 5000;
 const CHAT_SYNC_HISTORY_LIMIT = 24;
 
+const trackedFrameOrigins = new WeakMap();
+
 let chatIntegrationHandle = null;
 let chatPollTimer = null;
 
@@ -37,6 +39,32 @@ function getWorldEngineFrames() {
     return Array.from(document.querySelectorAll('iframe.world-engine-iframe'))
         .map((iframe) => iframe?.contentWindow)
         .filter(Boolean);
+}
+
+function trackWorldEngineFrame(iframe) {
+    if (!iframe || !(iframe instanceof HTMLIFrameElement)) {
+        return;
+    }
+
+    const frameWindow = iframe.contentWindow;
+    if (!frameWindow) {
+        return;
+    }
+
+    const src = iframe.getAttribute('src') || iframe.src || '';
+    let origin = null;
+    if (src) {
+        try {
+            origin = new URL(src, window.location.href).origin;
+        } catch (error) {
+            console.warn('[World Engine] Failed to resolve iframe origin.', error);
+        }
+    }
+
+    trackedFrameOrigins.set(frameWindow, {
+        origin,
+        iframe,
+    });
 }
 
 function broadcastChatPayload(payload, targetFrame = null) {
@@ -203,6 +231,22 @@ function handleFrameChatMessage(event) {
     const { data } = event || {};
     if (!data || data.source !== EXTENSION_NAME || data.type !== 'world-engine-chat') return;
 
+    const frameInfo = event?.source ? trackedFrameOrigins.get(event.source) : null;
+    if (!frameInfo) {
+        console.warn('[World Engine] Ignoring chat payload from untracked frame.', {
+            origin: event?.origin,
+        });
+        return;
+    }
+
+    if (frameInfo.origin && event?.origin && frameInfo.origin !== event.origin) {
+        console.warn('[World Engine] Ignoring chat payload from unexpected origin.', {
+            expected: frameInfo.origin,
+            received: event.origin,
+        });
+        return;
+    }
+
     const payload = data.payload || {};
     const text = typeof payload.text === 'string' ? payload.text.trim() : '';
     if (!text || payload.direction !== 'outgoing') return;
@@ -296,8 +340,10 @@ async function openWorldEnginePopup() {
     const dialog = $(template);
 
     dialog.on('load', '#world_engine_iframe', (event) => {
-        sendSettingsToFrame(event.target.contentWindow, settings);
-        syncChatHistory(event.target.contentWindow);
+        trackWorldEngineFrame(event.target);
+        const frameWindow = event.target?.contentWindow;
+        sendSettingsToFrame(frameWindow, settings);
+        syncChatHistory(frameWindow);
     });
 
     dialog.on('input', '#world_engine_speed', async (event) => {
@@ -366,6 +412,7 @@ function setupSettingsPanel(root) {
 
     const settings = getSettings();
     const iframe = root.querySelector('#world_engine_iframe');
+    trackWorldEngineFrame(iframe);
     const iframeWrapper = root.querySelector('.world-engine-iframe-wrapper');
     const speedInput = root.querySelector('#world_engine_speed');
     const speedValue = root.querySelector('#world_engine_speed_value');
@@ -383,6 +430,7 @@ function setupSettingsPanel(root) {
     const updateIframeSrc = () => {
         if (iframe) {
             iframe.src = buildViewUrl(settings);
+            trackWorldEngineFrame(iframe);
         }
     };
 
@@ -473,6 +521,7 @@ function setupSettingsPanel(root) {
     });
 
     iframe?.addEventListener('load', () => {
+        trackWorldEngineFrame(iframe);
         sendSettingsToFrame(iframe.contentWindow, settings);
         syncChatHistory(iframe.contentWindow);
     });
