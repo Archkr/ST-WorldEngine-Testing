@@ -4,8 +4,25 @@
     <meta charset="UTF-8">
     <title>World Engine</title>
     <link rel="stylesheet" href="./styles.css">
+    <style>
+        /* Fallback error display */
+        #error-log {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #ff5555;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            z-index: 9999;
+            display: none;
+            max-width: 80%;
+        }
+    </style>
 </head>
 <body>
+    <div id="error-log"></div>
     <div id="instructions">
         <h1>Controls</h1>
         <p>Move: <strong>W A S D</strong></p>
@@ -32,7 +49,6 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { ExpressionTextureClient } from './dist/expression-listener.js';
 
         // --- CONFIGURATION & CONSTANTS ---
         const DEFAULT_CHAT_MESSAGE = 'The river is so clear today...';
@@ -82,7 +98,7 @@
             jump: false,
             isGrounded: true,
             velocity: new THREE.Vector3(),
-            yaw: Math.PI,
+            yaw: 0, // Fixed: 0 looks North (-Z), Math.PI looks South (+Z)
             pitch: 0,
             lastTime: performance.now(),
             isLocked: false,
@@ -108,7 +124,6 @@
         window.WorldEngine = window.WorldEngine || {};
         window.WorldEngine.updateChatMessage = updateChatMessage;
         window.WorldEngine.applySettings = applySettings;
-        window.WorldEngine.ExpressionTextureClient = ExpressionTextureClient;
         window.WorldEngine.receiveAssistantMessage = (message) => recordChatMessage('assistant', message);
 
         window.addEventListener(ASSISTANT_MESSAGE_EVENT, (event) => {
@@ -118,8 +133,22 @@
 
         window.addEventListener('message', handleIncomingMessage);
 
-        init();
-        animate();
+        // Start safely
+        try {
+            init();
+            animate();
+        } catch (e) {
+            showError("Crash during init: " + e.message);
+            console.error(e);
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error-log');
+            if (el) {
+                el.style.display = 'block';
+                el.textContent = msg;
+            }
+        }
 
         // --- INITIALIZATION ---
         function init() {
@@ -133,7 +162,7 @@
             camera.rotation.order = 'YXZ';
             camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
 
-            // --- LIGHTING (From New Script) ---
+            // --- LIGHTING ---
             const ambientLight = new THREE.HemisphereLight(0xddeeff, 0x224422, 0.4);
             scene.add(ambientLight);
 
@@ -155,14 +184,12 @@
             buildWorld();
             
             // Set spawn point: Position player to look at the pedestal (0,0,0) from a distance
-            // Pedestal is at (0, h, 0). Let's spawn at (0, h, 12) looking North
+            // Pedestal is at 0,0. We spawn at Z=12, facing -Z (North)
             const spawnX = 0;
             const spawnZ = 12;
             const spawnY = getBaseHeight(spawnX, spawnZ);
             camera.position.set(spawnX, spawnY + PLAYER_EYE_HEIGHT, spawnZ);
-            state.yaw = Math.PI; // Look back towards 0,0
-            camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
-
+            
             // --- RENDERER ---
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -180,7 +207,7 @@
             updateInstructionsVisibility();
         }
 
-        // --- TERRAIN LOGIC (From New Script) ---
+        // --- TERRAIN LOGIC ---
         function getBaseHeight(x, z) {
             const dist = Math.sqrt(x*x + z*z);
             const angle = Math.atan2(z, x);
@@ -209,7 +236,7 @@
             createForest();
             createBridges(); 
             createTower();
-            createPedestalAndAvatar(); // Modified to include Avatar
+            createPedestalAndAvatar(); 
             createFireflies();
         }
 
@@ -491,10 +518,6 @@
 
             avatarSprite = new THREE.Sprite(avatarMaterial);
             avatarSprite.renderOrder = 5;
-
-            // The top of pedestal is at global Y: (h - 0.05) + 0.3 + (0.15/2) roughly.
-            // The top mesh is at local y=0.3, height 0.15. So top surface is 0.3 + 0.075 = 0.375
-            // Global Y surface = group.y + 0.375
             avatarBaseHeight = (h - 0.05) + 0.375;
             
             setAvatarSpriteDimensions();
@@ -507,12 +530,22 @@
             avatarSprite.add(shadow);
             updateAvatarShadow();
 
-            expressionClient = new ExpressionTextureClient({
-                sprite: avatarSprite,
-                textureLoader: loader,
-                onTextureApplied: handleAvatarTextureApplied
-            });
-            if (expressionClient?.fallbackUrl) expressionClient.swapTexture(expressionClient.fallbackUrl);
+            // DYNAMIC IMPORT: Prevents black screen crash if file is missing
+            import('./dist/expression-listener.js')
+                .then(module => {
+                    const { ExpressionTextureClient } = module;
+                    expressionClient = new ExpressionTextureClient({
+                        sprite: avatarSprite,
+                        textureLoader: loader,
+                        onTextureApplied: handleAvatarTextureApplied
+                    });
+                    if (expressionClient?.fallbackUrl) expressionClient.swapTexture(expressionClient.fallbackUrl);
+                    console.log("Expression Texture Client loaded.");
+                })
+                .catch(err => {
+                    console.warn("Expression Texture Client failed to load (Avatar expressions disabled).", err);
+                    // Optional: Visual cue that avatar expressions are offline, but not critical.
+                });
 
             chatMaterial = new THREE.SpriteMaterial({ 
                 transparent: true, 
