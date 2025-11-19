@@ -105,6 +105,8 @@
         const RENDER_SCALE_RANGE = [0.5, 1.5];
         const RAIN_INTENSITY_RANGE = [0, 2];
         const FOG_DENSITY_RANGE = [0.2, 3];
+        const CLOUD_DENSITY_RANGE = [0, 2];
+        const CLOUD_SPEED_RANGE = [0, 2];
         const BASE_MOUSE_SENSITIVITY = 0.0025;
 
         const runtimeSettings = {
@@ -120,6 +122,9 @@
             showChatBubbles: true,
             rainIntensity: 1.0,
             fogDensity: 1.0,
+            cloudsEnabled: true,
+            cloudDensity: 1.0,
+            cloudSpeed: 0.6,
         };
 
         const state = {
@@ -159,6 +164,8 @@
         let galaxySprites = [];
         let sunSprite = null;
         let moonSprite = null;
+        let cloudLayer = null;
+        let cloudUniforms = null;
 
         const celestialState = {
             sunDirection: new THREE.Vector3(1, 0.4, 0).normalize(),
@@ -222,6 +229,7 @@
             createGalaxy();
             createGalaxySprites();
             createCelestialSprites();
+            createCloudLayer();
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.rotation.order = 'YXZ';
@@ -914,6 +922,91 @@
             scene.add(moonSprite);
         }
 
+        function createCloudLayer() {
+            if (!scene) return;
+
+            cloudUniforms = {
+                time: { value: 0 },
+                density: { value: runtimeSettings.cloudDensity },
+                speed: { value: runtimeSettings.cloudSpeed },
+                baseColor: { value: new THREE.Color(1, 1, 1) },
+                opacity: { value: 0.4 },
+            };
+
+            const geometry = new THREE.PlaneGeometry(320, 320, 1, 1);
+            const material = new THREE.ShaderMaterial({
+                uniforms: cloudUniforms,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                vertexShader: /* glsl */`
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: /* glsl */`
+                    varying vec2 vUv;
+                    uniform float time;
+                    uniform float density;
+                    uniform float speed;
+                    uniform vec3 baseColor;
+                    uniform float opacity;
+
+                    float hash(vec2 p) {
+                        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+                    }
+
+                    float noise(vec2 p) {
+                        vec2 i = floor(p);
+                        vec2 f = fract(p);
+
+                        float a = hash(i);
+                        float b = hash(i + vec2(1.0, 0.0));
+                        float c = hash(i + vec2(0.0, 1.0));
+                        float d = hash(i + vec2(1.0, 1.0));
+
+                        vec2 u = f * f * (3.0 - 2.0 * f);
+                        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                    }
+
+                    float fbm(vec2 p) {
+                        float value = 0.0;
+                        float amp = 0.55;
+                        for (int i = 0; i < 5; i++) {
+                            value += amp * noise(p);
+                            p *= 2.35;
+                            amp *= 0.55;
+                        }
+                        return value;
+                    }
+
+                    void main() {
+                        float densityClamp = clamp(density, 0.0, 2.0);
+                        vec2 p = (vUv - 0.5) * 6.0;
+                        p.x += time * 0.06 * speed;
+                        p.y += time * 0.035 * speed;
+
+                        float base = fbm(p);
+                        float detail = fbm(p * 2.1 + 6.0);
+                        float coverage = mix(0.35, 0.6, densityClamp);
+                        float mask = smoothstep(coverage - 0.15, coverage + 0.05, base + detail * 0.35);
+
+                        float alpha = mask * opacity * densityClamp;
+                        if (alpha < 0.01) discard;
+                        gl_FragColor = vec4(baseColor, alpha);
+                    }
+                `,
+            });
+
+            cloudLayer = new THREE.Mesh(geometry, material);
+            cloudLayer.rotation.x = -Math.PI / 2;
+            cloudLayer.position.y = 38;
+            cloudLayer.visible = false;
+            scene.add(cloudLayer);
+        }
+
         function createRadialTexture(stops, size = 256) {
             const canvas = document.createElement('canvas');
             canvas.width = canvas.height = size;
@@ -1554,6 +1647,14 @@
             return clampInRange(value, FOG_DENSITY_RANGE, runtimeSettings.fogDensity);
         }
 
+        function clampCloudDensity(value) {
+            return clampInRange(value, CLOUD_DENSITY_RANGE, runtimeSettings.cloudDensity);
+        }
+
+        function clampCloudSpeed(value) {
+            return clampInRange(value, CLOUD_SPEED_RANGE, runtimeSettings.cloudSpeed);
+        }
+
         function normalizeWeatherValue(value) {
             if (typeof value !== 'string') return runtimeSettings.weather;
             const normalized = value.toLowerCase();
@@ -1649,6 +1750,30 @@
             }
         }
 
+        function updateCloudLayerFromProfile(profile) {
+            if (!cloudLayer || !cloudUniforms) return;
+
+            const enabled = Boolean(runtimeSettings.cloudsEnabled);
+            cloudLayer.visible = enabled;
+            if (!enabled) return;
+
+            const nightFactor = getNightFactor(runtimeSettings.timeOfDay);
+            const density = clampCloudDensity(runtimeSettings.cloudDensity);
+            const speed = clampCloudSpeed(runtimeSettings.cloudSpeed);
+            const weatherDensityScale = runtimeSettings.weather === 'rainy' ? 1.2 : (runtimeSettings.weather === 'foggy' ? 0.9 : 1.0);
+            const weatherSpeedScale = runtimeSettings.weather === 'foggy' ? 0.75 : 1.0;
+
+            cloudUniforms.density.value = density * weatherDensityScale;
+            cloudUniforms.speed.value = speed * weatherSpeedScale;
+
+            const tint = profile.skyColor.clone().lerp(profile.sunColor, 0.25 * nightFactor);
+            const brightness = THREE.MathUtils.lerp(0.4, 0.8, nightFactor);
+            cloudUniforms.baseColor.value.copy(tint).multiplyScalar(brightness).clampScalar(0, 1);
+
+            const baseOpacity = THREE.MathUtils.lerp(0.2, 0.5, nightFactor);
+            cloudUniforms.opacity.value = baseOpacity * (runtimeSettings.weather === 'rainy' ? 0.85 : 1.0);
+        }
+
         function updateCelestialBodies(profile) {
             const angle = (runtimeSettings.timeOfDay % 24) / 24 * Math.PI * 2;
             const sunElevation = -Math.cos(angle);
@@ -1723,6 +1848,7 @@
             if (renderer) {
                 renderer.toneMappingExposure = profile.exposure;
             }
+            updateCloudLayerFromProfile(profile);
             updateWeatherSystems();
         }
 
@@ -1907,6 +2033,9 @@
                 showChatBubbles: p.get('showChatBubbles') === 'true',
                 rainIntensity: Number(p.get('rainIntensity')),
                 fogDensity: Number(p.get('fogDensity')),
+                cloudsEnabled: p.get('cloudsEnabled') === 'true',
+                cloudDensity: Number(p.get('cloudDensity')),
+                cloudSpeed: Number(p.get('cloudSpeed')),
             });
         }
 
@@ -1923,6 +2052,9 @@
             runtimeSettings.showChatBubbles = Boolean(s.showChatBubbles ?? runtimeSettings.showChatBubbles);
             runtimeSettings.rainIntensity = clampRainIntensity(s.rainIntensity ?? runtimeSettings.rainIntensity);
             runtimeSettings.fogDensity = clampFogDensity(s.fogDensity ?? runtimeSettings.fogDensity);
+            runtimeSettings.cloudsEnabled = Boolean(s.cloudsEnabled ?? runtimeSettings.cloudsEnabled);
+            runtimeSettings.cloudDensity = clampCloudDensity(s.cloudDensity ?? runtimeSettings.cloudDensity);
+            runtimeSettings.cloudSpeed = clampCloudSpeed(s.cloudSpeed ?? runtimeSettings.cloudSpeed);
             updateInstructionsVisibility();
             updateEnvironmentFromSettings();
             updateRendererSettings();
@@ -2013,6 +2145,10 @@
             requestAnimationFrame(animate);
             const time = performance.now(), delta = Math.min((time-state.lastTime)/1000, 0.1);
             state.lastTime = time; state.globalTime += delta;
+
+            if (cloudUniforms) {
+                cloudUniforms.time.value = state.globalTime;
+            }
             
             const water = scene.getObjectByName("water");
             if(water && waterVertices.length) {

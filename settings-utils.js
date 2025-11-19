@@ -14,6 +14,9 @@ export const DEFAULT_SETTINGS = {
     showChatBubbles: true,
     rainIntensity: 1.0,
     fogDensity: 1.0,
+    cloudsEnabled: true,
+    cloudDensity: 1.0,
+    cloudSpeed: 0.6,
 };
 
 const EXTENSION_BASE_URL = new URL('.', import.meta.url);
@@ -38,6 +41,9 @@ export function buildViewUrl(settings) {
     url.searchParams.set('showChatBubbles', String(Boolean(settings.showChatBubbles ?? DEFAULT_SETTINGS.showChatBubbles)));
     url.searchParams.set('rainIntensity', String(settings.rainIntensity ?? DEFAULT_SETTINGS.rainIntensity));
     url.searchParams.set('fogDensity', String(settings.fogDensity ?? DEFAULT_SETTINGS.fogDensity));
+    url.searchParams.set('cloudsEnabled', String(Boolean(settings.cloudsEnabled ?? DEFAULT_SETTINGS.cloudsEnabled)));
+    url.searchParams.set('cloudDensity', String(settings.cloudDensity ?? DEFAULT_SETTINGS.cloudDensity));
+    url.searchParams.set('cloudSpeed', String(settings.cloudSpeed ?? DEFAULT_SETTINGS.cloudSpeed));
     return url.toString();
 }
 
