@@ -7,24 +7,25 @@
 </head>
 <body>
     <div id="instructions">
-        <h1>Click to Enter Park</h1>
-        <p>Move: W, A, S, D</p>
-        <p>Look: Mouse</p>
+        <h1>Controls</h1>
+        <p>Move: <strong>W A S D</strong></p>
+        <p>Jump: <strong>Space</strong></p>
+        <p>Look: <strong>Mouse</strong></p>
     </div>
 
     <div id="chat_overlay" aria-label="World Engine chat">
         <div id="chat_log" aria-live="polite"></div>
         <form id="chat_form" autocomplete="off">
-            <input id="chat_input" name="chat_input" type="text" placeholder="Send a message" inputmode="text" maxlength="500">
-            <button type="submit">Send</button>
+            <input id="chat_input" name="chat_input" type="text" placeholder="Type a message..." inputmode="text" maxlength="1000">
+            <button type="submit" aria-label="Send Message"></button>
         </form>
     </div>
 
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -33,11 +34,26 @@
         import * as THREE from 'three';
         import { ExpressionTextureClient } from './dist/expression-listener.js';
 
-        const DEFAULT_CHAT_MESSAGE = 'Welcome to the Park!';
+        const DEFAULT_CHAT_MESSAGE = 'The river is so clear today...';
         const ASSISTANT_MESSAGE_EVENT = 'world-engine-assistant-message';
-        const CHAT_SPRITE_OFFSET = new THREE.Vector3(0, 2.0, 0);
+        const CHAT_SPRITE_OFFSET = new THREE.Vector3(0, 2.9, 0); 
         const CHAT_HISTORY_LIMIT = 12;
-        const CHAT_BUBBLE_HISTORY = 3;
+        const CHAT_WORLD_WIDTH = 8;
+        const AVATAR_WORLD_HEIGHT = 4.2;
+        const DEFAULT_AVATAR_ASPECT = 2 / 3;
+        const MIN_AVATAR_ASPECT = 0.45;
+        const MAX_AVATAR_ASPECT = 0.85;
+        const PLAYER_EYE_HEIGHT = 1.7;
+        const GRAVITY = 32.0;
+        const JUMP_FORCE = 13.0;
+        
+        const WORLD_SIZE = 250;
+        
+        const globalUniforms = {
+            time: { value: 0 },
+            windSpeed: { value: 1.5 },
+            windStrength: { value: 0.15 }
+        };
 
         const runtimeSettings = {
             movementSpeed: 1.0,
@@ -50,6 +66,8 @@
             moveBackward: false,
             moveLeft: false,
             moveRight: false,
+            jump: false,
+            isGrounded: true,
             velocity: new THREE.Vector3(),
             yaw: Math.PI,
             pitch: 0,
@@ -58,18 +76,16 @@
             isChatFocused: false,
             chatText: DEFAULT_CHAT_MESSAGE,
             chatHistory: [],
+            globalTime: 0,
         };
 
-        let camera;
-        let scene;
-        let renderer;
-        let chatMaterial;
-        let chatSprite;
-        let avatarSprite;
+        let camera, scene, renderer;
+        let chatMaterial, chatSprite, avatarSprite;
+        let avatarBaseHeight = 0;
+        let avatarShadow = null;
         let expressionClient;
-        let chatLogElement;
-        let chatInput;
-        let chatForm;
+        let chatInput, chatForm;
+        let fireflies;
 
         window.WorldEngine = window.WorldEngine || {};
         window.WorldEngine.updateChatMessage = updateChatMessage;
@@ -91,24 +107,53 @@
             parseSettingsFromQuery();
 
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87ceeb);
-            scene.fog = new THREE.Fog(0x87ceeb, 10, 100);
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.FogExp2(0x87CEEB, 0.015);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
-            camera.position.set(0, 1.6, 10);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
             camera.rotation.order = 'YXZ';
             camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
 
-            const light = new THREE.HemisphereLight(0xffffff, 0x777788, 2.5);
-            light.position.set(0.5, 1, 0.75);
-            scene.add(light);
+            // Adjusted Lighting for realism
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Slightly dimmer ambient
+            scene.add(ambientLight);
 
-            buildPark();
-            buildAvatar();
+            const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.2); // Warmer sun
+            sunLight.position.set(60, 100, 40);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            const d = 100;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+            
+            // Ground bounce light (Hemisphere)
+            const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x5ba635, 0.3);
+            scene.add(hemiLight);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const rimLight = new THREE.DirectionalLight(0xaaccff, 0.3);
+            rimLight.position.set(-50, 30, -50);
+            scene.add(rimLight);
+
+            buildWorld();
+            
+            const spawnZ = 28; 
+            const spawnY = getTerrainHeight(0, spawnZ);
+            camera.position.set(0, spawnY + PLAYER_EYE_HEIGHT, spawnZ);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            
             document.body.appendChild(renderer.domElement);
 
             setupPointerLock(renderer.domElement);
@@ -117,503 +162,636 @@
             updateInstructionsVisibility();
         }
 
-        function parseSettingsFromQuery() {
-            const params = new URLSearchParams(window.location.search);
-            const moveSpeed = Number(params.get('moveSpeed'));
-            const invertLook = params.get('invertLook');
-            const showInstructions = params.get('showInstructions');
+        // --- SHADERS ---
+        function makeWindMaterial(parameters) {
+            const material = new THREE.MeshStandardMaterial(parameters);
+            material.onBeforeCompile = (shader) => {
+                shader.uniforms.time = globalUniforms.time;
+                shader.uniforms.windStrength = globalUniforms.windStrength;
+                
+                shader.vertexShader = `
+                    uniform float time; 
+                    uniform float windStrength;
+                    ${shader.vertexShader}
+                `;
+                
+                shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
+                    `#include <begin_vertex>
+                    float mask = max(0.0, position.y);
+                    float sway = sin(time * 1.5 + position.x * 0.5 + position.z * 0.5) * 0.15;
+                    float sway2 = cos(time * 2.1 + position.x * 0.2) * 0.1;
+                    transformed.x += (sway + sway2) * mask * windStrength;
+                    transformed.z += (sway - sway2) * mask * windStrength;`
+                );
+            };
+            material.customProgramCacheKey = () => 'wind_material';
+            return material;
+        }
 
+        // --- TERRAIN ---
+        function getTerrainHeight(x, z) {
+            const base = (Math.sin(x * 0.04) + Math.cos(z * 0.04)) * 2.0;
+            const riverCenterZ = Math.sin(x * 0.05) * 10.0;
+            const distToRiver = Math.abs(z - riverCenterZ);
+            let h = base + 2.0;
+            if (distToRiver < 15.0) {
+                const depth = Math.cos((distToRiver / 15.0) * (Math.PI / 2)) * 7.0;
+                h -= depth;
+            }
+            return h;
+        }
+
+        function getStructureCollisionHeight(x, z) {
+            // Dais is at 0,0,28 (spawnZ was 28 in previous step, but structure was built at spawnZ)
+            // Let's verify where buildAvatarAndStructure puts it.
+            // It uses spawnZ = 28.
+            
+            const centerX = 0;
+            const centerZ = 28;
+            const dx = x - centerX;
+            const dz = z - centerZ;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+            
+            // Terrain height at structure center
+            const terrainH = getTerrainHeight(centerX, centerZ); 
+            
+            // Bottom Step: Radius ~3.8, Height +0.3 relative to terrainH (technically 0.15 above center)
+            // Top Platform: Radius ~3.0, Height +0.6 relative to terrainH
+            
+            if (dist < 3.0) {
+                return terrainH + 0.6; // Top platform height
+            } else if (dist < 3.8) {
+                return terrainH + 0.3; // Bottom step height
+            }
+            
+            return -999; // No structure here
+        }
+
+        function buildWorld() {
+            const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 128, 128);
+            geo.rotateX(-Math.PI / 2);
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) pos.setY(i, getTerrainHeight(pos.getX(i), pos.getZ(i)));
+            geo.computeVertexNormals();
+            const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x5ba635, roughness: 1.0 }));
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+
+            const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), new THREE.MeshStandardMaterial({ color: 0x4fa4b6, transparent: true, opacity: 0.75, roughness: 0.1, metalness: 0.1 }));
+            water.rotateX(-Math.PI / 2);
+            water.position.y = -1.0;
+            scene.add(water);
+
+            buildGrass();
+            buildTrees();
+            buildRuins();
+            buildFireflies();
+            buildAvatarAndStructure(); 
+        }
+
+        function buildGrass() {
+            const count = 15000;
+            const dummy = new THREE.Object3D();
+            const shape = new THREE.Shape();
+            shape.moveTo(-0.05, 0); shape.lineTo(0.05, 0); shape.lineTo(0, 0.6); shape.lineTo(-0.05, 0);
+            const mesh = new THREE.InstancedMesh(new THREE.ShapeGeometry(shape), makeWindMaterial({ color: 0x88cc44, side: THREE.DoubleSide }), count);
+            mesh.receiveShadow = true;
+            let i = 0;
+            while(i < count) {
+                const x = (Math.random() - 0.5) * 180, z = (Math.random() - 0.5) * 180, y = getTerrainHeight(x, z);
+                if (y > -0.8) {
+                    dummy.position.set(x, y, z);
+                    dummy.rotation.set((Math.random()-0.5)*0.3, Math.random()*Math.PI, 0);
+                    dummy.scale.setScalar(0.8 + Math.random()*0.8);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                    mesh.setColorAt(i++, new THREE.Color(0x77bb44).offsetHSL(0, 0, (Math.random()-0.5)*0.1));
+                }
+            }
+            scene.add(mesh);
+        }
+
+        function buildTrees() {
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033 });
+            const leafMat = makeWindMaterial({ color: 0x2d6e32, flatShading: true });
+            const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 2.5, 7);
+            const leafGeo = new THREE.IcosahedronGeometry(1, 0);
+            for(let i=0; i<70; i++) {
+                const x = (Math.random()-0.5)*190, z = (Math.random()-0.5)*190, y = getTerrainHeight(x, z);
+                if (y < -0.2 || (Math.abs(x-10)<10 && Math.abs(z-28)<12)) continue; // Avoid new spawn area
+                const group = new THREE.Group();
+                group.position.set(x, y, z);
+                
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 1.25; trunk.castShadow = true; group.add(trunk);
+                
+                for(let L=0; L<3; L++) {
+                    const f = new THREE.Mesh(leafGeo, leafMat);
+                    f.position.y = 3.0 + (L * 1.8);
+                    const s = 2.2 - (L * 0.4);
+                    f.scale.set(s, 1.5, s);
+                    f.castShadow = true; group.add(f);
+                }
+                group.scale.setScalar(1.0 + Math.random()*0.6);
+                group.rotation.y = Math.random()*Math.PI;
+                scene.add(group);
+            }
+        }
+
+        function buildRuins() {
+            const mat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 });
+            const bridgeX = 10, bridgeZ = 5, bridgeY = 1.0;
+            
+            const createSeg = () => {
+                const g = new THREE.Group();
+                const f = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 4), mat);
+                f.castShadow = true; g.add(f);
+                const post = new THREE.BoxGeometry(0.2, 1, 0.2);
+                [ [0.9,1.8], [-0.9,1.8], [0.9,-1.8], [-0.9,-1.8] ].forEach(([x,z]) => {
+                    const p = new THREE.Mesh(post, mat); p.position.set(x, 0.5, z); g.add(p);
+                });
+                return g;
+            };
+
+            const L = createSeg(); L.position.set(bridgeX, bridgeY, bridgeZ - 6); L.lookAt(bridgeX, bridgeY+2, bridgeZ); scene.add(L);
+            const R = createSeg(); R.position.set(bridgeX, bridgeY, bridgeZ + 6); R.lookAt(bridgeX, bridgeY+2, bridgeZ); scene.add(R);
+            
+            const d = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 1), mat);
+            d.position.set(bridgeX, -0.8, bridgeZ); d.rotation.set(0.2, 0.5, 0.1); scene.add(d);
+        }
+
+        function buildFireflies() {
+            const count = 150, pos = [], phase = [];
+            for(let i=0; i<count; i++) {
+                pos.push((Math.random()-0.5)*100, 1+Math.random()*4, (Math.random()-0.5)*100);
+                phase.push(Math.random()*Math.PI*2);
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            geo.setAttribute('phase', new THREE.Float32BufferAttribute(phase, 1));
+            const mat = new THREE.PointsMaterial({ color: 0xaaffaa, size: 0.25, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+            fireflies = new THREE.Points(geo, mat);
+            scene.add(fireflies);
+        }
+
+        function buildAvatarAndStructure() {
+            const spawnZ = 28;
+            const spawnY = getTerrainHeight(0, spawnZ);
+
+            const structureGroup = new THREE.Group();
+            structureGroup.position.set(0, spawnY, spawnZ);
+
+            const stoneMat = new THREE.MeshStandardMaterial({ 
+                color: 0x777777, 
+                roughness: 0.9,
+                flatShading: true 
+            });
+
+            // 1. Deep Foundation
+            const foundation = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 6.0, 8), stoneMat);
+            foundation.position.y = -3.0;
+            foundation.receiveShadow = true;
+            structureGroup.add(foundation);
+
+            // 2. Bottom Step
+            const step1 = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.8, 0.3, 8), stoneMat);
+            step1.position.y = 0.15; 
+            step1.receiveShadow = true;
+            step1.castShadow = true; // Casts shadow on ground
+            structureGroup.add(step1);
+
+            // 3. Top Platform
+            const step2 = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 3.0, 0.3, 8), stoneMat);
+            step2.position.y = 0.45;
+            step2.receiveShadow = true;
+            step2.castShadow = true; // Casts shadow on step 1
+            structureGroup.add(step2);
+
+            // 4. Decorative Pillars
+            for(let i=0; i<5; i++) {
+                const angle = (i / 5) * Math.PI * 2;
+                const col = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.6 + Math.random()*0.4, 6), stoneMat);
+                col.position.set(Math.sin(angle)*3.2, 0.5, Math.cos(angle)*3.2);
+                col.rotation.set((Math.random()-0.5)*0.2, 0, (Math.random()-0.5)*0.2); 
+                col.castShadow = true;
+                structureGroup.add(col);
+            }
+
+            scene.add(structureGroup);
+
+            const loader = new THREE.TextureLoader();
+            
+            const avatarMaterial = new THREE.SpriteMaterial({
+                transparent: true,
+                toneMapped: false,
+                fog: false,
+                depthTest: false,
+                depthWrite: false
+            });
+
+            avatarSprite = new THREE.Sprite(avatarMaterial);
+            avatarSprite.renderOrder = 5;
+
+            avatarBaseHeight = spawnY + 0.6;
+            setAvatarSpriteDimensions();
+
+            avatarSprite.position.set(0, avatarBaseHeight + AVATAR_WORLD_HEIGHT / 2, spawnZ);
+            scene.add(avatarSprite);
+
+            const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.2, 32), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 }));
+            shadow.rotation.x = -Math.PI/2;
+            avatarShadow = shadow;
+            avatarSprite.add(shadow);
+            updateAvatarShadow();
+
+            expressionClient = new ExpressionTextureClient({
+                sprite: avatarSprite,
+                textureLoader: loader,
+                onTextureApplied: handleAvatarTextureApplied
+            });
+            if (expressionClient?.fallbackUrl) expressionClient.swapTexture(expressionClient.fallbackUrl);
+
+            chatMaterial = new THREE.SpriteMaterial({ 
+                transparent: true, 
+                depthTest: false, 
+                depthWrite: false,
+                toneMapped: false, 
+                fog: false 
+            });
+            chatSprite = new THREE.Sprite(chatMaterial);
+            chatSprite.renderOrder = 10;
+            chatSprite.scale.set(CHAT_WORLD_WIDTH, 3.5, 1);
+            scene.add(chatSprite);
+        }
+
+        // --- CHAT SYSTEM ---
+        function updateChatMessage(message, role='assistant') { recordChatMessage(role, message); }
+        function recordChatMessage(role, message) {
+            state.chatHistory.push({ role: role==='user'?'user':'assistant', text: String(message||'').trim() });
+            if (state.chatHistory.length > CHAT_HISTORY_LIMIT) state.chatHistory.shift();
+            renderChatBubble();
+        }
+
+        function renderChatBubble() {
+            if (!chatMaterial) return;
+            if (chatMaterial.map) chatMaterial.map.dispose();
+            const entries = state.chatHistory.filter(m => m.role === 'assistant').slice(-1);
+            if (entries.length === 0) { chatSprite.visible = false; return; }
+            
+            chatSprite.visible = true;
+            const { texture, aspectRatio } = createChatTexture(entries[0]);
+            chatMaterial.map = texture;
+            chatMaterial.needsUpdate = true;
+            const newHeight = CHAT_WORLD_WIDTH / aspectRatio;
+            chatSprite.scale.set(CHAT_WORLD_WIDTH, newHeight, 1);
+            chatSprite.userData.height = newHeight;
+        }
+
+        function createChatTexture(entry) {
+            const padding=60, headerHeight=60, lineHeight=52, canvasWidth=2048;
+            const maxWidth = canvasWidth - (padding*2);
+            const tailHeight = 40;
+
+            const mCanvas = document.createElement('canvas');
+            const mCtx = mCanvas.getContext('2d');
+            mCtx.font = '500 42px "Inter", "Segoe UI", sans-serif';
+            const parsedTokens = parseChatFormatting(entry.text);
+            const formattedLines = layoutChatLines(mCtx, parsedTokens, maxWidth);
+            const totalHeight = padding + headerHeight + (formattedLines.length * lineHeight) + padding + tailHeight;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = canvasWidth;
+            canvas.height = Math.max(300, totalHeight);
+            const ctx = canvas.getContext('2d');
+            const bubbleHeight = canvas.height - tailHeight - 30;
+
+            ctx.fillStyle = 'rgba(30, 33, 36, 0.95)'; 
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; 
+            ctx.lineWidth = 4;
+            
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 20;
+
+            roundRect(ctx, 20, 20, canvas.width - 40, bubbleHeight, 50, true, true);
+            ctx.shadowColor = 'transparent';
+
+            ctx.beginPath();
+            const tailX = canvas.width / 2;
+            const tailY = 20 + bubbleHeight;
+            ctx.moveTo(tailX - 30, tailY);
+            ctx.lineTo(tailX, tailY + tailHeight);
+            ctx.lineTo(tailX + 30, tailY);
+            ctx.fillStyle = 'rgba(30, 33, 36, 0.95)';
+            ctx.fill();
+
+            ctx.font = 'bold 38px "Inter", sans-serif';
+            ctx.fillStyle = '#0078d7'; 
+            ctx.textBaseline = 'top';
+            ctx.fillText("ASSISTANT", padding + 20, padding + 20);
+
+            ctx.font = '400 42px "Inter", "Segoe UI", sans-serif';
+            ctx.fillStyle = '#e0e0e0';
+            let textY = padding + 20 + headerHeight;
+            formattedLines.forEach(line => {
+                let textX = padding + 20;
+                line.forEach(segment => {
+                    ctx.fillStyle = getChatFillColor(segment.style);
+                    ctx.fillText(segment.text, textX, textY);
+                    textX += segment.width;
+                });
+                textY += lineHeight;
+            });
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return { texture: tex, aspectRatio: canvas.width / canvas.height };
+        }
+
+        function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+            ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.closePath();
+            if (fill) ctx.fill(); if (stroke) ctx.stroke();
+        }
+
+        function parseChatFormatting(message = '') {
+            const tokens = [];
+            let buffer = '';
+            let inAction = false;
+            let inQuote = false;
+
+            const pushBuffer = () => {
+                if (!buffer) return;
+                tokens.push({ text: buffer, style: inAction ? 'action' : (inQuote ? 'quote' : 'normal') });
+                buffer = '';
+            };
+
+            const normalized = message.replace(/\r/g, '');
+
+            for (let i = 0; i < normalized.length; i++) {
+                const char = normalized[i];
+
+                if (char === '*' && !inQuote) {
+                    pushBuffer();
+                    inAction = !inAction;
+                    continue;
+                }
+
+                if (char === '"' && !inAction) {
+                    pushBuffer();
+                    if (inQuote) {
+                        buffer += '"';
+                        pushBuffer();
+                        inQuote = false;
+                    } else {
+                        inQuote = true;
+                        buffer += '"';
+                        pushBuffer();
+                    }
+                    continue;
+                }
+
+                buffer += char;
+            }
+
+            pushBuffer();
+            return tokens.length ? tokens : [{ text: '', style: 'normal' }];
+        }
+
+        function layoutChatLines(ctx, tokens, maxWidth) {
+            const lines = [];
+            let currentLine = [];
+            let lineWidth = 0;
+
+            const pushLine = () => {
+                lines.push(currentLine.length ? currentLine : [{ text: '', style: 'normal', width: 0 }]);
+                currentLine = [];
+                lineWidth = 0;
+            };
+
+            tokens.forEach((token) => {
+                const segments = token.text.split(/(\s+)/);
+                segments.forEach((segment) => {
+                    if (!segment) return;
+                    const newlineParts = segment.split('\n');
+                    newlineParts.forEach((part, index) => {
+                        if (part) {
+                            const width = ctx.measureText(part).width;
+                            const isWhitespace = /^\s+$/.test(part);
+                            if (!isWhitespace && lineWidth + width > maxWidth && currentLine.length) {
+                                pushLine();
+                            }
+                            if (!(isWhitespace && !lineWidth)) {
+                                currentLine.push({ text: part, style: token.style, width });
+                                lineWidth += width;
+                            }
+                        }
+                        if (index < newlineParts.length - 1) {
+                            pushLine();
+                        }
+                    });
+                });
+            });
+
+            if (currentLine.length) {
+                pushLine();
+            } else if (!lines.length) {
+                lines.push([{ text: '', style: 'normal', width: 0 }]);
+            }
+
+            return lines;
+        }
+
+        function getChatFillColor(style) {
+            switch (style) {
+                case 'action':
+                    return '#c0c0c0';
+                case 'quote':
+                    return '#9fdcff';
+                default:
+                    return '#e0e0e0';
+            }
+        }
+
+        function handleAvatarTextureApplied(texture) {
+            const image = texture?.image;
+            const aspectRatio = image?.width && image?.height ? image.width / image.height : null;
+            setAvatarSpriteDimensions(aspectRatio);
+        }
+
+        function setAvatarSpriteDimensions(aspectRatio = DEFAULT_AVATAR_ASPECT) {
+            if (!avatarSprite) return;
+            const aspect = THREE.MathUtils.clamp(aspectRatio || DEFAULT_AVATAR_ASPECT, MIN_AVATAR_ASPECT, MAX_AVATAR_ASPECT);
+            const width = AVATAR_WORLD_HEIGHT * aspect;
+            avatarSprite.scale.set(width, AVATAR_WORLD_HEIGHT, 1);
+            if (avatarBaseHeight) {
+                avatarSprite.position.y = avatarBaseHeight + AVATAR_WORLD_HEIGHT / 2;
+            }
+            updateAvatarShadow();
+        }
+
+        function updateAvatarShadow() {
+            if (!avatarShadow || !avatarSprite) return;
+            avatarShadow.position.y = -(avatarSprite.scale.y / 2) + 0.05;
+            const shadowScale = Math.max(0.8, avatarSprite.scale.x * 0.35);
+            avatarShadow.scale.set(shadowScale, shadowScale, 1);
+        }
+
+        // --- SYSTEM ---
+        function parseSettingsFromQuery() {
+            const p = new URLSearchParams(window.location.search);
             applySettings({
-                movementSpeed: Number.isFinite(moveSpeed) ? moveSpeed : undefined,
-                invertLook: invertLook === null ? undefined : invertLook === 'true',
-                showInstructions: showInstructions === null ? undefined : showInstructions === 'true',
+                movementSpeed: Number(p.get('moveSpeed'))||1,
+                invertLook: p.get('invertLook')==='true',
+                showInstructions: p.get('showInstructions')==='true'
             });
         }
 
-        function applySettings(newSettings = {}) {
-            runtimeSettings.movementSpeed = Math.max(0.1, Number(newSettings.movementSpeed ?? runtimeSettings.movementSpeed));
-            runtimeSettings.invertLook = Boolean(newSettings.invertLook ?? runtimeSettings.invertLook);
-            runtimeSettings.showInstructions = Boolean(newSettings.showInstructions ?? runtimeSettings.showInstructions);
+        function applySettings(s) {
+            runtimeSettings.movementSpeed = Math.max(0.1, Number(s.movementSpeed??1));
+            runtimeSettings.invertLook = Boolean(s.invertLook??false);
+            runtimeSettings.showInstructions = Boolean(s.showInstructions??true);
             updateInstructionsVisibility();
         }
 
-        function handleIncomingMessage(event) {
-            const { data } = event;
-            if (!data || data.source !== 'world-engine') return;
-
-            if (data.type === 'world-engine-settings') {
-                applySettings(data.payload || {});
-            }
-
-            if (data.type === 'world-engine-chat') {
-                if (Array.isArray(data.payload?.history)) {
-                    replaceChatHistory(data.payload.history);
-                    return;
-                }
-
-                if (data.payload?.direction === 'outgoing') {
-                    return;
-                }
-
-                recordChatMessage(data.payload?.role || 'assistant', data.payload?.text);
+        function handleIncomingMessage(e) {
+            if (e.data?.source !== 'world-engine') return;
+            if (e.data.type === 'world-engine-settings') applySettings(e.data.payload);
+            if (e.data.type === 'world-engine-chat') {
+                if (Array.isArray(e.data.payload?.history)) replaceChatHistory(e.data.payload.history);
+                else if (e.data.payload?.direction !== 'outgoing') recordChatMessage(e.data.payload?.role||'assistant', e.data.payload?.text);
             }
         }
 
+        function replaceChatHistory(entries=[]) {
+            state.chatHistory = (Array.isArray(entries) ? entries : []).map(e => ({
+                role: e?.role==='user'?'user':'assistant', text: String(e?.text||'').trim()
+            })).filter(e=>e.text).slice(-CHAT_HISTORY_LIMIT);
+            renderChatBubble();
+        }
+
         function setupPointerLock(target) {
-            const instructions = document.getElementById('instructions');
-            const requestLock = () => target.requestPointerLock?.();
-
-            instructions?.addEventListener('click', requestLock);
-            target.addEventListener('click', requestLock);
-
-            document.addEventListener('pointerlockchange', () => {
-                state.isLocked = document.pointerLockElement === target;
-                updateInstructionsVisibility();
-            });
-
-            document.addEventListener('mousemove', (event) => {
-                if (!state.isLocked) return;
-                const lookSpeed = 0.0025;
-                state.yaw -= event.movementX * lookSpeed;
-                state.pitch -= event.movementY * lookSpeed * (runtimeSettings.invertLook ? -1 : 1);
-                const maxPitch = Math.PI / 2 - 0.01;
-                state.pitch = Math.max(-maxPitch, Math.min(maxPitch, state.pitch));
+            const req = () => target.requestPointerLock?.();
+            document.getElementById('instructions')?.addEventListener('click', req);
+            target.addEventListener('click', req);
+            document.addEventListener('pointerlockchange', () => { state.isLocked=document.pointerLockElement===target; updateInstructionsVisibility(); });
+            document.addEventListener('mousemove', (e) => {
+                if(!state.isLocked) return;
+                state.yaw -= e.movementX * 0.0025;
+                state.pitch -= e.movementY * 0.0025 * (runtimeSettings.invertLook?-1:1);
+                state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch));
                 camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
             });
         }
 
         function setupChatUi() {
-            chatLogElement = document.getElementById('chat_log');
             chatInput = document.getElementById('chat_input');
             chatForm = document.getElementById('chat_form');
-
-            chatForm?.addEventListener('submit', (event) => {
-                event.preventDefault();
-                const text = chatInput?.value?.trim() ?? '';
-                if (!text) return;
-                dispatchChatMessage(text);
-                if (chatInput) {
-                    chatInput.value = '';
-                }
+            chatForm?.addEventListener('submit', (e) => {
+                e.preventDefault(); const text = chatInput?.value?.trim();
+                if(text) { dispatchChatMessage(text); chatInput.value=''; chatInput.blur(); }
             });
-
-            chatInput?.addEventListener('focus', () => {
-                state.isChatFocused = true;
-                resetMovementState();
-                exitPointerLock();
-            });
-
-            chatInput?.addEventListener('blur', () => {
-                state.isChatFocused = false;
-            });
-
-            renderChatLog();
+            chatInput?.addEventListener('focus', () => { state.isChatFocused=true; if(document.pointerLockElement) document.exitPointerLock(); });
+            chatInput?.addEventListener('blur', () => state.isChatFocused=false);
             renderChatBubble();
         }
 
         function setupEvents() {
-            document.addEventListener('keydown', (event) => {
-                if (handleChatHotkeys(event)) return;
-                handleKey(event, true);
-            });
-            document.addEventListener('keyup', (event) => handleKey(event, false));
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
+            window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+            document.addEventListener('keydown', e => handleKey(e, true));
+            document.addEventListener('keyup', e => handleKey(e, false));
         }
 
-        function handleChatHotkeys(event) {
-            if (state.isChatFocused) {
-                if (event.code === 'Escape') {
-                    chatInput?.blur();
-                    return true;
-                }
-                return false;
+        function handleKey(e, pressed) {
+            if(state.isChatFocused) {
+                if(e.code==='Enter' && pressed) chatInput.focus();
+                if(e.code==='Escape' && pressed) chatInput.blur();
+                return;
             }
-
-            if (event.code === 'Enter' && (!event.target || event.target === document.body)) {
-                chatInput?.focus();
-                return true;
+            switch(e.code) {
+                case 'ArrowUp': case 'KeyW': state.moveForward=pressed; break;
+                case 'ArrowLeft': case 'KeyA': state.moveLeft=pressed; break;
+                case 'ArrowDown': case 'KeyS': state.moveBackward=pressed; break;
+                case 'ArrowRight': case 'KeyD': state.moveRight=pressed; break;
+                case 'Space': state.jump=pressed; break;
             }
-
-            return false;
-        }
-
-        function handleKey(event, pressed) {
-            if (state.isChatFocused) return;
-            if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-            switch (event.code) {
-                case 'ArrowUp':
-                case 'KeyW':
-                    state.moveForward = pressed;
-                    break;
-                case 'ArrowLeft':
-                case 'KeyA':
-                    state.moveLeft = pressed;
-                    break;
-                case 'ArrowDown':
-                case 'KeyS':
-                    state.moveBackward = pressed;
-                    break;
-                case 'ArrowRight':
-                case 'KeyD':
-                    state.moveRight = pressed;
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        function exitPointerLock() {
-            if (document.pointerLockElement === renderer?.domElement) {
-                document.exitPointerLock?.();
-            }
-        }
-
-        function resetMovementState() {
-            state.moveForward = false;
-            state.moveBackward = false;
-            state.moveLeft = false;
-            state.moveRight = false;
-            state.velocity.set?.(0, 0, 0);
         }
 
         function dispatchChatMessage(text) {
             recordChatMessage('user', text);
-
-            const payload = { text, role: 'user', direction: 'outgoing' };
-
-            try {
-                window.parent?.postMessage({
-                    source: 'world-engine',
-                    type: 'world-engine-chat',
-                    payload,
-                }, '*');
-            } catch (error) {
-                console.warn('[World Engine] Failed to dispatch chat message', error);
-            }
-        }
-
-        function replaceChatHistory(entries = []) {
-            const normalized = Array.isArray(entries)
-                ? entries
-                    .map((entry) => ({
-                        role: entry?.role === 'user' ? 'user' : 'assistant',
-                        text: String(entry?.text ?? '').trim(),
-                    }))
-                    .filter((entry) => entry.text)
-                : [];
-
-            state.chatHistory = normalized.slice(-CHAT_HISTORY_LIMIT);
-            state.chatText = state.chatHistory[state.chatHistory.length - 1]?.text || DEFAULT_CHAT_MESSAGE;
-
-            renderChatLog();
-            renderChatBubble();
-        }
-
-        function buildPark() {
-            const floorGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x4c9a2a });
-            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-            floor.rotation.x = -Math.PI / 2;
-            scene.add(floor);
-
-            const treeGeo = new THREE.ConeGeometry(2, 8, 8);
-            const treeMat = new THREE.MeshStandardMaterial({ color: 0x2e8b57 });
-            const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 2);
-            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
-
-            for (let i = 0; i < 40; i++) {
-                const treeGroup = new THREE.Group();
-                const foliage = new THREE.Mesh(treeGeo, treeMat);
-                foliage.position.y = 5;
-                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-                trunk.position.y = 1;
-
-                treeGroup.add(trunk);
-                treeGroup.add(foliage);
-
-                const x = Math.random() * 100 - 50;
-                const z = Math.random() * 100 - 50;
-
-                if (Math.abs(x) > 5 || Math.abs(z) > 5) {
-                    treeGroup.position.set(x, 0, z);
-                    scene.add(treeGroup);
-                }
-            }
-
-            const podiumGeo = new THREE.CylinderGeometry(2, 2.5, 1, 32);
-            const podiumMat = new THREE.MeshStandardMaterial({ color: 0x808080 });
-            const podium = new THREE.Mesh(podiumGeo, podiumMat);
-            podium.position.set(0, 0.5, 0);
-            scene.add(podium);
-        }
-
-        function buildAvatar() {
-            const textureLoader = new THREE.TextureLoader();
-            const material = new THREE.SpriteMaterial();
-
-            avatarSprite = new THREE.Sprite(material);
-            avatarSprite.position.set(0, 2.5, 0);
-            avatarSprite.scale.set(3, 3, 1);
-            scene.add(avatarSprite);
-
-            expressionClient = new ExpressionTextureClient({ sprite: avatarSprite, textureLoader });
-
-            if (expressionClient?.fallbackUrl) {
-                expressionClient.swapTexture(expressionClient.fallbackUrl);
-            }
-
-            chatMaterial = new THREE.SpriteMaterial({
-                transparent: true,
-                depthTest: false,
-                depthWrite: false,
-            });
-            chatSprite = new THREE.Sprite(chatMaterial);
-            chatSprite.renderOrder = 10;
-            chatSprite.frustumCulled = false;
-            chatSprite.position.copy(avatarSprite.position).add(CHAT_SPRITE_OFFSET);
-            chatSprite.scale.set(6, 3.5, 1);
-            chatSprite.visible = true;
-            scene.add(chatSprite);
-        }
-
-        function updateChatMessage(message, role = 'assistant') {
-            recordChatMessage(role, message);
-        }
-
-        function recordChatMessage(role, message) {
-            const normalizedRole = role === 'user' ? 'user' : 'assistant';
-            const text = String(message ?? '').trim() || DEFAULT_CHAT_MESSAGE;
-            const history = state.chatHistory;
-            const lastEntry = history[history.length - 1];
-            const shouldMergeWithLast = lastEntry
-                && lastEntry.role === normalizedRole
-                && (text.startsWith(lastEntry.text) || lastEntry.text.startsWith(text));
-
-            if (shouldMergeWithLast) {
-                lastEntry.text = text;
-            } else {
-                history.push({ role: normalizedRole, text });
-            }
-
-            if (history.length > CHAT_HISTORY_LIMIT) {
-                history.splice(0, history.length - CHAT_HISTORY_LIMIT);
-            }
-
-            state.chatText = text;
-            renderChatLog();
-            renderChatBubble();
-        }
-
-        function renderChatLog() {
-            if (!chatLogElement) return;
-            const fragment = document.createDocumentFragment();
-            state.chatHistory.forEach((entry) => {
-                const row = document.createElement('div');
-                row.className = `chat-log-entry chat-log-${entry.role}`;
-
-                const label = document.createElement('span');
-                label.className = 'chat-log-label';
-                label.textContent = entry.role === 'assistant' ? 'Assistant' : 'You';
-
-                const text = document.createElement('span');
-                text.className = 'chat-log-text';
-                text.textContent = entry.text;
-
-                row.appendChild(label);
-                row.appendChild(text);
-                fragment.appendChild(row);
-            });
-
-            chatLogElement.innerHTML = '';
-            chatLogElement.appendChild(fragment);
-            chatLogElement.scrollTop = chatLogElement.scrollHeight;
-        }
-
-        function renderChatBubble() {
-            if (!chatMaterial) return;
-
-            if (chatMaterial.map) {
-                chatMaterial.map.dispose();
-            }
-
-            const recentHistory = state.chatHistory.length
-                ? state.chatHistory.slice(-CHAT_BUBBLE_HISTORY)
-                : [{ role: 'assistant', text: DEFAULT_CHAT_MESSAGE }];
-
-            chatMaterial.map = createChatTexture(recentHistory);
-            chatMaterial.needsUpdate = true;
-        }
-
-        function createChatTexture(historyEntries) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = 768;
-            canvas.height = 384;
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-            roundRect(ctx, 16, 48, canvas.width - 32, canvas.height - 80, 28, true);
-
-            const maxWidth = canvas.width - 140;
-            const lineHeight = 34;
-            const labelOffset = 60;
-            const messageSpacing = 96;
-
-            historyEntries.forEach((entry, index) => {
-                const baseY = 80 + index * messageSpacing;
-                const label = entry.role === 'assistant' ? 'Assistant' : 'You';
-                const labelColor = entry.role === 'assistant' ? '#93c5fd' : '#34d399';
-
-                ctx.font = '700 18px "Inter", Arial, sans-serif';
-                ctx.fillStyle = labelColor;
-                ctx.textAlign = 'left';
-                ctx.fillText(label, 36, baseY + 6);
-
-                ctx.font = '600 24px "Inter", Arial, sans-serif';
-                ctx.fillStyle = '#e2e8f0';
-                const wrapped = wrapAndClampText(ctx, entry.text || DEFAULT_CHAT_MESSAGE, maxWidth, 3);
-                const totalHeight = wrapped.length * lineHeight;
-                const startY = baseY + 12 + (60 - totalHeight) / 2;
-
-                wrapped.forEach((line, lineIndex) => {
-                    ctx.fillText(line, labelOffset, startY + lineIndex * lineHeight);
-                });
-            });
-
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            return texture;
-        }
-
-        function wrapAndClampText(ctx, message, maxWidth, maxLines) {
-            const words = message.split(/\s+/).filter(Boolean);
-            if (!words.length) return [''];
-
-            const lines = [];
-            let currentLine = '';
-
-            for (let i = 0; i < words.length; i++) {
-                const word = words[i];
-                const nextLine = currentLine ? `${currentLine} ${word}` : word;
-
-                if (ctx.measureText(nextLine).width <= maxWidth) {
-                    currentLine = nextLine;
-                    continue;
-                }
-
-                if (lines.length === maxLines - 1) {
-                    const remaining = [currentLine, ...words.slice(i)].filter(Boolean).join(' ');
-                    lines.push(clampLine(ctx, remaining, maxWidth));
-                    return lines;
-                }
-
-                if (currentLine) {
-                    lines.push(currentLine);
-                } else {
-                    lines.push(clampLine(ctx, word, maxWidth));
-                }
-
-                currentLine = '';
-            }
-
-            if (lines.length === maxLines) {
-                return lines;
-            }
-
-            if (currentLine) {
-                lines.push(currentLine);
-            }
-
-            return lines.slice(0, maxLines);
-        }
-
-        function clampLine(ctx, text, maxWidth) {
-            let clamped = text;
-            const ellipsis = '…';
-
-            while (ctx.measureText(clamped + ellipsis).width > maxWidth && clamped.length > 0) {
-                clamped = clamped.slice(0, -1);
-            }
-
-            return clamped.length < text.length ? clamped + ellipsis : clamped;
-        }
-
-        function roundRect(ctx, x, y, width, height, radius, fill) {
-            ctx.beginPath();
-            ctx.moveTo(x + radius, y);
-            ctx.lineTo(x + width - radius, y);
-            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-            ctx.lineTo(x + width, y + height - radius);
-            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-            ctx.lineTo(x + radius, y + height);
-            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-            ctx.lineTo(x, y + radius);
-            ctx.quadraticCurveTo(x, y, x + radius, y);
-            ctx.closePath();
-            if (fill) ctx.fill();
+            window.parent?.postMessage({ source:'world-engine', type:'world-engine-chat', payload: {text, role:'user', direction:'outgoing'} }, '*');
         }
 
         function updateInstructionsVisibility() {
-            const instructions = document.getElementById('instructions');
-            if (!instructions) return;
-
-            if (!runtimeSettings.showInstructions) {
-                instructions.style.display = 'none';
-                return;
-            }
-
-            instructions.style.display = state.isLocked ? 'none' : 'block';
+            const el = document.getElementById('instructions');
+            if(el) el.style.display = (runtimeSettings.showInstructions && !state.isLocked) ? 'block' : 'none';
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            const time = performance.now();
-            const delta = (time - state.lastTime) / 1000;
-            state.lastTime = time;
+            const time = performance.now(), delta = Math.min((time-state.lastTime)/1000, 0.1);
+            state.lastTime = time; state.globalTime += delta;
+            
+            globalUniforms.time.value = state.globalTime;
 
-            if (state.isLocked) {
-                updateMovement(delta);
+            if(fireflies) {
+                const pos=fireflies.geometry.attributes.position.array, ph=fireflies.geometry.attributes.phase.array;
+                for(let i=0; i<pos.length/3; i++) {
+                    pos[i*3+1] += Math.sin(state.globalTime + ph[i])*0.02;
+                    pos[i*3] += Math.cos(state.globalTime*0.5 + ph[i])*0.01;
+                }
+                fireflies.geometry.attributes.position.needsUpdate = true;
             }
 
-            if (chatSprite && avatarSprite) {
+            if(state.isLocked) updateMovement(delta);
+
+            if(chatSprite?.visible) {
+                const bob = Math.sin(state.globalTime*2)*0.05;
                 chatSprite.position.copy(avatarSprite.position).add(CHAT_SPRITE_OFFSET);
+                chatSprite.position.y += (chatSprite.userData.height||3.5)*0.4 + bob;
                 chatSprite.lookAt(camera.position);
             }
-
             renderer.render(scene, camera);
         }
 
         function updateMovement(delta) {
-            const damping = 10.0;
-            const acceleration = 100.0 * runtimeSettings.movementSpeed;
-
+            const accel = 60 * runtimeSettings.movementSpeed;
+            const damping = 8;
             state.velocity.x -= state.velocity.x * damping * delta;
             state.velocity.z -= state.velocity.z * damping * delta;
 
-            const inputX = Number(state.moveRight) - Number(state.moveLeft);
-            const inputZ = Number(state.moveBackward) - Number(state.moveForward);
-            const hasInput = inputX !== 0 || inputZ !== 0;
-
-            if (hasInput) {
-                const length = Math.hypot(inputX, inputZ) || 1;
-                const normX = inputX / length;
-                const normZ = inputZ / length;
-                const sinYaw = Math.sin(state.yaw);
-                const cosYaw = Math.cos(state.yaw);
-
-                const worldX = normX * cosYaw - normZ * sinYaw;
-                const worldZ = normX * sinYaw + normZ * cosYaw;
-
-                state.velocity.x -= worldX * acceleration * delta;
-                state.velocity.z -= worldZ * acceleration * delta;
+            const ix = Number(state.moveRight)-Number(state.moveLeft);
+            const iz = Number(state.moveBackward)-Number(state.moveForward);
+            
+            if (ix!==0 || iz!==0) {
+                const fwd = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), state.yaw);
+                const rgt = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), state.yaw);
+                const move = new THREE.Vector3().addScaledVector(rgt, ix).addScaledVector(fwd, -iz).normalize();
+                state.velocity.x += move.x * accel * delta;
+                state.velocity.z += move.z * accel * delta;
             }
+
+            state.velocity.y -= GRAVITY * delta;
+            if(state.jump && state.isGrounded) { state.velocity.y = JUMP_FORCE; state.isGrounded = false; }
 
             camera.position.x += state.velocity.x * delta;
             camera.position.z += state.velocity.z * delta;
+            camera.position.y += state.velocity.y * delta;
+            
+            // Collision Logic
+            const terrainH = getTerrainHeight(camera.position.x, camera.position.z);
+            const structureH = getStructureCollisionHeight(camera.position.x, camera.position.z);
+            
+            // The floor is whichever is higher: terrain or structure
+            const floorY = Math.max(terrainH, structureH);
+
+            if(camera.position.y < floorY + PLAYER_EYE_HEIGHT) {
+                camera.position.y = floorY + PLAYER_EYE_HEIGHT;
+                state.velocity.y = Math.max(0, state.velocity.y);
+                state.isGrounded = true;
+            } else state.isGrounded = false;
         }
     </script>
 </body>
