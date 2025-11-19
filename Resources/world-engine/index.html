@@ -64,10 +64,10 @@
         
         // --- SKY CONSTANTS ---
         const SKYBOX_RADIUS = 500;
-        const STAR_COUNT = 3000; // Increased from 1200
+        const STAR_COUNT = 3000; 
         const CELESTIAL_DISTANCE = SKYBOX_RADIUS * 0.9;
         const SUN_SCALE = 70;
-        const MOON_SCALE = 35; // Slightly smaller for sharpness
+        const MOON_SCALE = 35; 
 
         const COLORS = {
             sky: 0x87CEEB,
@@ -136,7 +136,7 @@
         let skybox = null;
         let skyUniforms = null;
         let starField = null;
-        let deepSpaceGroup = null; // Group for nebula, stars, galaxies
+        let deepSpaceGroup = null; 
         let nebulaCloud = null;
         let galaxySystem = null;
         let sunSprite = null;
@@ -370,7 +370,7 @@
                 colors[i * 3 + 1] = starColor.g;
                 colors[i * 3 + 2] = starColor.b;
 
-                sizes[i] = Math.random() < 0.1 ? 2.5 : 1.2; // Occasional brighter stars
+                sizes[i] = Math.random() < 0.1 ? 2.5 : 1.2; 
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -382,7 +382,6 @@
                 { offset: 1.0, color: 'rgba(255, 255, 255, 0)' },
             ], 32);
 
-            // Custom shader material for size attenuation without standard PointsMaterial quirks
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     pointTexture: { value: starTexture }
@@ -409,7 +408,7 @@
                 depthTest: false,
                 depthWrite: false,
                 transparent: true,
-                fog: false // Explicitly disable fog
+                fog: false 
             });
 
             starField = new THREE.Points(geometry, material);
@@ -427,12 +426,11 @@
             const sizes = [];
 
             const center = new THREE.Vector3(1, 0.8, -0.5).normalize().multiplyScalar(SKYBOX_RADIUS * 0.85);
-            const color1 = new THREE.Color(0x4b0082); // Indigo
-            const color2 = new THREE.Color(0x00ffff); // Cyan
-            const color3 = new THREE.Color(0xff1493); // Deep Pink
+            const color1 = new THREE.Color(0x4b0082); 
+            const color2 = new THREE.Color(0x00ffff); 
+            const color3 = new THREE.Color(0xff1493); 
 
             for (let i = 0; i < particleCount; i++) {
-                // Create a cluster
                 const r = Math.random() * 150;
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos(2 * Math.random() - 1);
@@ -443,13 +441,11 @@
                     r * Math.cos(phi)
                 );
                 
-                // Flatten slightly to make a band
                 offset.y *= 0.4; 
                 
                 const pos = center.clone().add(offset);
                 positions.push(pos.x, pos.y, pos.z);
 
-                // Mix colors
                 const mixedColor = color1.clone().lerp(color2, Math.random()).lerp(color3, Math.random() * 0.3);
                 colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
 
@@ -461,7 +457,7 @@
             geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
             const texture = createRadialTexture([
-                { offset: 0.0, color: 'rgba(255, 255, 255, 0.05)' }, // Low opacity
+                { offset: 0.0, color: 'rgba(255, 255, 255, 0.05)' }, 
                 { offset: 0.5, color: 'rgba(255, 255, 255, 0.02)' },
                 { offset: 1.0, color: 'rgba(0, 0, 0, 0)' }
             ], 128);
@@ -475,7 +471,7 @@
                 depthTest: false,
                 transparent: true,
                 opacity: 0.6,
-                fog: false // FIX: Disable fog so colors pop
+                fog: false 
             });
 
             nebulaCloud = new THREE.Points(geometry, material);
@@ -492,7 +488,7 @@
                 radius: 100,
                 branches: 3,
                 spin: 1,
-                randomness: 0.5, // Increased randomness scale
+                randomness: 0.5, 
                 randomnessPower: 3,
                 insideColor: 0xff6030,
                 outsideColor: 0x1b3984
@@ -511,19 +507,16 @@
                 const spinAngle = radius * parameters.spin;
                 const branchAngle = (i % parameters.branches) / parameters.branches * Math.PI * 2;
 
-                // FIX: Scale randomness by radius to spread stars properly (cone-like scatter along arms)
                 const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
                 const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
                 const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
 
-                // Local galaxy coordinates
                 const x = Math.cos(branchAngle + spinAngle) * radius + randomX;
-                const y = randomY * 0.5; // Flatter disk
+                const y = randomY * 0.5; 
                 const z = Math.sin(branchAngle + spinAngle) * radius + randomZ;
 
-                // Orient galaxy to face center
                 const tempPos = new THREE.Vector3(x, y, z);
-                tempPos.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.3); // Tilt
+                tempPos.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.3); 
                 tempPos.add(center);
 
                 positions[i * 3] = tempPos.x;
@@ -539,16 +532,24 @@
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+            // FIX: Added texture so points aren't rendered as squares
+            const galaxyTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
+                { offset: 0.4, color: 'rgba(255, 255, 255, 0.8)' },
+                { offset: 1.0, color: 'rgba(0, 0, 0, 0)' }
+            ], 64);
+
             const material = new THREE.PointsMaterial({
-                size: 15, // Larger size for visibility
-                sizeAttenuation: true, // Enable attenuation so they scale with distance
+                size: 15, 
+                map: galaxyTexture,
+                sizeAttenuation: true, 
                 depthWrite: false,
                 depthTest: false,
                 blending: THREE.AdditiveBlending,
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.8,
-                fog: false // FIX: Disable fog
+                fog: false 
             });
 
             galaxySystem = new THREE.Points(geometry, material);
