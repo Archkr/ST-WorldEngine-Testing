@@ -66,31 +66,55 @@ function normalizeChatMessage(message) {
     };
 }
 
-function syncChatHistory(targetFrame = null) {
+function getLatestAssistantEntry() {
     const ctx = getWorldEngineContext();
     const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
+    const startIndex = Math.max(0, chat.length - CHAT_SYNC_HISTORY_LIMIT * 2);
 
-    const recentRaw = chat.slice(-CHAT_SYNC_HISTORY_LIMIT * 2);
-    
-    const normalized = recentRaw
-        .map((entry) => normalizeChatMessage(entry))
-        .filter(Boolean);
-
-    const recent = normalized.slice(-CHAT_SYNC_HISTORY_LIMIT);
-    const lastEntry = recent[recent.length - 1] || null;
-    chatSyncState.lastSignature = lastEntry?.signature ?? null;
-
-    let displayHistory = [];
-    for (let i = recent.length - 1; i >= 0; i--) {
-        if (recent[i].role === CHAT_ROLE_ASSISTANT) {
-            displayHistory = [recent[i]];
-            break;
+    for (let i = chat.length - 1; i >= startIndex; i--) {
+        const normalized = normalizeChatMessage(chat[i]);
+        if (normalized?.role === CHAT_ROLE_ASSISTANT) {
+            return normalized;
         }
     }
 
+    return null;
+}
+
+function refreshLastSignatureFromHistory() {
+    const latestAssistantEntry = getLatestAssistantEntry();
+    const latestSignature = latestAssistantEntry?.signature ?? null;
+
+    if (latestSignature === chatSyncState.lastSignature) {
+        return latestSignature;
+    }
+
+    chatSyncState.lastSignature = latestSignature;
+    return latestSignature;
+}
+
+function syncChatHistory(targetFrame = null) {
+    const latestAssistantEntry = getLatestAssistantEntry();
+    const newestSignature = latestAssistantEntry?.signature ?? null;
+
+    if (newestSignature === chatSyncState.lastSignature) {
+        console.debug('[World Engine] Skipping chat sync; signature unchanged.', newestSignature);
+        return;
+    }
+
+    chatSyncState.lastSignature = newestSignature;
+
+    const history = latestAssistantEntry ? [{ text: latestAssistantEntry.text, role: latestAssistantEntry.role }] : [];
+
+    console.debug('[World Engine] Broadcasting chat history update.', {
+        signature: newestSignature,
+        entries: history.length,
+    });
+
     broadcastChatPayload({
-        history: displayHistory.map(({ text, role }) => ({ text, role })),
+        history,
         direction: 'incoming',
+        signature: chatSyncState.lastSignature,
     }, targetFrame);
 }
 
@@ -121,10 +145,12 @@ function handleStreamToken(...args) {
     const tokenText = resolveTokenText(args);
     if (!tokenText) return;
     chatSyncState.streamingBuffer += tokenText;
+    refreshLastSignatureFromHistory();
     broadcastChatPayload({
         text: chatSyncState.streamingBuffer,
         role: CHAT_ROLE_ASSISTANT,
         direction: 'incoming',
+        signature: chatSyncState.lastSignature,
     });
 }
 
@@ -134,6 +160,7 @@ function handleMessageFinished() {
             text: chatSyncState.streamingBuffer,
             role: CHAT_ROLE_ASSISTANT,
             direction: 'incoming',
+            signature: chatSyncState.lastSignature,
         });
     }
     chatSyncState.streamingActive = false;
