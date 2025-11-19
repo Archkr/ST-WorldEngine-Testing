@@ -739,8 +739,8 @@
 
                 const sprite = new THREE.Sprite(material);
                 sprite.userData.baseOpacity = 0.85;
-                // Reduce scale significantly for distance effect (30-60 instead of 80-140)
-                sprite.scale.setScalar(30 + Math.random() * 30); 
+                // Reduce scale significantly for distance effect (25-50 range)
+                sprite.scale.setScalar(25 + Math.random() * 25); 
 
                 // Spread across the entire upper hemisphere (y > 0.1 to avoid ground clipping)
                 const theta = Math.random() * Math.PI * 2;
@@ -1941,10 +1941,10 @@
             if (deepSpaceGroup) {
                 deepSpaceGroup.position.copy(camera.position);
 
-                // Slow rotation for stars/nebula
-                if (starField) starField.rotation.y += delta * 0.005;
-                if (nebulaCloud) nebulaCloud.rotation.y += delta * 0.003;
-                if (galaxySystem) galaxySystem.rotation.y -= delta * 0.0025;
+                // Unified rotation: Rotate the entire group so stars, nebula, and galaxies move together
+                deepSpaceGroup.rotation.y += delta * 0.005;
+
+                // Keep the galaxy core texture spinning for effect, but position remains locked
                 if (galaxyCore?.material) galaxyCore.material.rotation += delta * 0.25;
             }
 
