@@ -200,6 +200,12 @@
     font-size: 0.95em;
 }
 
+.world-engine-setting-value {
+    font-weight: 600;
+    color: var(--text_head, #fff);
+    font-variant-numeric: tabular-nums;
+}
+
 /* --- Custom Range Slider --- */
 input[type=range].world-engine-slider {
     -webkit-appearance: none;
@@ -236,6 +242,17 @@ input[type=range].world-engine-slider::-webkit-slider-thumb {
 
 input[type=range].world-engine-slider::-webkit-slider-thumb:hover {
     transform: scale(1.2);
+}
+
+.world-engine-select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border_color, #555);
+    background: var(--block-body, #111);
+    color: var(--text_body, #eee);
+    font-family: inherit;
+    font-size: 0.95em;
 }
 
 /* --- Custom Toggle Switch --- */
