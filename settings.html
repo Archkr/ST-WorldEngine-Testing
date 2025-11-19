@@ -65,11 +65,47 @@
                     </select>
                 </div>
 
+                <!-- Camera FOV Slider -->
+                <div class="world-engine-setting-card">
+                    <div class="world-engine-setting-header">
+                        <div class="world-engine-setting-label" data-i18n="Camera FOV">Camera FOV</div>
+                        <div class="world-engine-setting-value" id="world_engine_fov_value">60°</div>
+                    </div>
+                    <input type="range" id="world_engine_fov" class="world-engine-slider" min="40" max="100" step="1">
+                </div>
+
+                <!-- Mouse Sensitivity Slider -->
+                <div class="world-engine-setting-card">
+                    <div class="world-engine-setting-header">
+                        <div class="world-engine-setting-label" data-i18n="Mouse sensitivity">Mouse sensitivity</div>
+                        <div class="world-engine-setting-value" id="world_engine_sensitivity_value">1.0x</div>
+                    </div>
+                    <input type="range" id="world_engine_sensitivity" class="world-engine-slider" min="0.2" max="3" step="0.05">
+                </div>
+
+                <!-- Render Scale Slider -->
+                <div class="world-engine-setting-card">
+                    <div class="world-engine-setting-header">
+                        <div class="world-engine-setting-label" data-i18n="Render scale">Render scale</div>
+                        <div class="world-engine-setting-value" id="world_engine_render_scale_value">100%</div>
+                    </div>
+                    <input type="range" id="world_engine_render_scale" class="world-engine-slider" min="0.5" max="1.5" step="0.05">
+                </div>
+
                 <!-- Invert Look Card -->
                 <div class="world-engine-setting-card">
                     <label class="world-engine-toggle">
                         <span class="world-engine-setting-label" data-i18n="Invert look (vertical)">Invert Look (Vertical)</span>
                         <input type="checkbox" id="world_engine_invert_look">
+                        <span class="world-engine-toggle-track"></span>
+                    </label>
+                </div>
+
+                <!-- Shadows Toggle -->
+                <div class="world-engine-setting-card">
+                    <label class="world-engine-toggle">
+                        <span class="world-engine-setting-label" data-i18n="Enable shadows">Enable shadows</span>
+                        <input type="checkbox" id="world_engine_shadows">
                         <span class="world-engine-toggle-track"></span>
                     </label>
                 </div>
@@ -81,6 +117,29 @@
                         <input type="checkbox" id="world_engine_show_instructions">
                         <span class="world-engine-toggle-track"></span>
                     </label>
+                </div>
+
+                <!-- Chat Bubble Toggle -->
+                <div class="world-engine-setting-card">
+                    <label class="world-engine-toggle">
+                        <span class="world-engine-setting-label" data-i18n="Show chat bubble">Show chat bubble</span>
+                        <input type="checkbox" id="world_engine_show_chat_bubble">
+                        <span class="world-engine-toggle-track"></span>
+                    </label>
+                </div>
+
+                <!-- Weather Extras -->
+                <div class="world-engine-setting-card">
+                    <div class="world-engine-setting-header">
+                        <div class="world-engine-setting-label" data-i18n="Rain intensity">Rain intensity</div>
+                        <div class="world-engine-setting-value" id="world_engine_rain_intensity_value">1.0x</div>
+                    </div>
+                    <input type="range" id="world_engine_rain_intensity" class="world-engine-slider" min="0" max="2" step="0.05">
+                    <div class="world-engine-setting-header">
+                        <div class="world-engine-setting-label" data-i18n="Fog density">Fog density</div>
+                        <div class="world-engine-setting-value" id="world_engine_fog_density_value">1.0x</div>
+                    </div>
+                    <input type="range" id="world_engine_fog_density" class="world-engine-slider" min="0.2" max="3" step="0.05">
                 </div>
 
             </div>

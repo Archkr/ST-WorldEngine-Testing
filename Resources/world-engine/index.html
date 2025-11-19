@@ -100,6 +100,12 @@
         ];
 
         const WEATHER_PRESETS = ['clear', 'foggy', 'rainy'];
+        const CAMERA_FOV_RANGE = [40, 100];
+        const MOUSE_SENSITIVITY_RANGE = [0.2, 3];
+        const RENDER_SCALE_RANGE = [0.5, 1.5];
+        const RAIN_INTENSITY_RANGE = [0, 2];
+        const FOG_DENSITY_RANGE = [0.2, 3];
+        const BASE_MOUSE_SENSITIVITY = 0.0025;
 
         const runtimeSettings = {
             movementSpeed: 1.0,
@@ -107,6 +113,13 @@
             showInstructions: true,
             timeOfDay: 12,
             weather: 'clear',
+            cameraFov: 60,
+            mouseSensitivity: 1.0,
+            shadowsEnabled: true,
+            renderScale: 1.0,
+            showChatBubbles: true,
+            rainIntensity: 1.0,
+            fogDensity: 1.0,
         };
 
         const state = {
@@ -237,18 +250,16 @@
             const spawnZ = 12;
             const spawnY = getBaseHeight(spawnX, spawnZ);
             camera.position.set(spawnX, spawnY + PLAYER_EYE_HEIGHT, spawnZ);
-            
+
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.outputColorSpace = THREE.SRGBColorSpace;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.2;
-            
+
             document.body.appendChild(renderer.domElement);
 
+            updateRendererSettings();
             setupPointerLock(renderer.domElement);
             setupEvents();
             setupChatUi();
@@ -1311,7 +1322,7 @@
             if (!chatMaterial) return;
             if (chatMaterial.map) chatMaterial.map.dispose();
             const entries = state.chatHistory.filter(m => m.role === 'assistant').slice(-1);
-            if (entries.length === 0) { chatSprite.visible = false; return; }
+            if (!runtimeSettings.showChatBubbles || entries.length === 0) { chatSprite.visible = false; return; }
             
             chatSprite.visible = true;
             const { texture, aspectRatio } = createChatTexture(entries[0]);
@@ -1517,6 +1528,32 @@
             return Math.min(24, Math.max(0, numeric));
         }
 
+        function clampInRange(value, [min, max], fallback) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return fallback;
+            return Math.min(max, Math.max(min, numeric));
+        }
+
+        function clampFovValue(value) {
+            return clampInRange(value, CAMERA_FOV_RANGE, runtimeSettings.cameraFov);
+        }
+
+        function clampMouseSensitivity(value) {
+            return clampInRange(value, MOUSE_SENSITIVITY_RANGE, runtimeSettings.mouseSensitivity);
+        }
+
+        function clampRenderScale(value) {
+            return clampInRange(value, RENDER_SCALE_RANGE, runtimeSettings.renderScale);
+        }
+
+        function clampRainIntensity(value) {
+            return clampInRange(value, RAIN_INTENSITY_RANGE, runtimeSettings.rainIntensity);
+        }
+
+        function clampFogDensity(value) {
+            return clampInRange(value, FOG_DENSITY_RANGE, runtimeSettings.fogDensity);
+        }
+
         function normalizeWeatherValue(value) {
             if (typeof value !== 'string') return runtimeSettings.weather;
             const normalized = value.toLowerCase();
@@ -1571,6 +1608,7 @@
                 default:
                     break;
             }
+            profile.fogDensity *= clampFogDensity(runtimeSettings.fogDensity);
             return profile;
         }
 
@@ -1688,6 +1726,23 @@
             updateWeatherSystems();
         }
 
+        function updateRendererSettings() {
+            if (camera) {
+                camera.fov = clampFovValue(runtimeSettings.cameraFov);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            }
+            if (renderer) {
+                const pixelRatio = Math.max(0.1, window.devicePixelRatio * clampRenderScale(runtimeSettings.renderScale));
+                renderer.setPixelRatio(pixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.shadowMap.enabled = Boolean(runtimeSettings.shadowsEnabled);
+            }
+            if (dirLight) {
+                dirLight.castShadow = Boolean(runtimeSettings.shadowsEnabled);
+            }
+        }
+
         function updateCelestialSpritePositions() {
             if (!camera) return;
             if (sunSprite) {
@@ -1717,14 +1772,24 @@
 
             if (runtimeSettings.weather === 'rainy') {
                 const sys = rainSystem ?? createRainSystem();
-                if (sys?.mesh) sys.mesh.visible = true;
+                if (sys?.mesh) {
+                    const active = Math.max(0, Math.floor(sys.maxCount * clampRainIntensity(runtimeSettings.rainIntensity)));
+                    sys.activeCount = active;
+                    sys.mesh.geometry.setDrawRange(0, active);
+                    sys.mesh.visible = active > 0;
+                }
             } else if (rainSystem?.mesh) {
                 rainSystem.mesh.visible = false;
             }
 
             if (!isNight && runtimeSettings.weather === 'foggy') {
                 const sys = fogSystem ?? createFogSystem();
-                if (sys?.mesh) sys.mesh.visible = true;
+                if (sys?.mesh) {
+                    const active = Math.max(0, Math.floor(sys.maxCount * clampFogDensity(runtimeSettings.fogDensity)));
+                    sys.activeCount = active;
+                    sys.mesh.geometry.setDrawRange(0, active);
+                    sys.mesh.visible = active > 0;
+                }
             } else if (fogSystem?.mesh) {
                 fogSystem.mesh.visible = false;
             }
@@ -1732,7 +1797,7 @@
 
         function createRainSystem() {
             if (!scene) return null;
-            const count = 1200;
+            const count = 1600;
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(count * 3);
             const speeds = new Float32Array(count);
@@ -1753,8 +1818,9 @@
             const particles = new THREE.Points(geometry, material);
             particles.visible = false;
             particles.frustumCulled = false;
+            geometry.setDrawRange(0, count);
             scene.add(particles);
-            rainSystem = { mesh: particles, speeds };
+            rainSystem = { mesh: particles, speeds, maxCount: count, activeCount: count };
             return rainSystem;
         }
 
@@ -1790,15 +1856,17 @@
             const particles = new THREE.Points(geometry, material);
             particles.visible = false;
             particles.frustumCulled = false;
+            geometry.setDrawRange(0, count);
             scene.add(particles);
-            fogSystem = { mesh: particles, offsets };
+            fogSystem = { mesh: particles, offsets, maxCount: count, activeCount: count };
             return fogSystem;
         }
 
         function updateWeatherParticles(delta) {
             if (rainSystem?.mesh?.visible) {
                 const positions = rainSystem.mesh.geometry.attributes.position;
-                for (let i = 0; i < positions.count; i++) {
+                const active = Math.min(rainSystem.activeCount ?? positions.count, positions.count);
+                for (let i = 0; i < active; i++) {
                     let y = positions.getY(i) - rainSystem.speeds[i] * delta;
                     if (y < -2) {
                         y = 12 + Math.random() * 12;
@@ -1812,7 +1880,8 @@
 
             if (fogSystem?.mesh?.visible) {
                 const positions = fogSystem.mesh.geometry.attributes.position;
-                for (let i = 0; i < positions.count; i++) {
+                const active = Math.min(fogSystem.activeCount ?? positions.count, positions.count);
+                for (let i = 0; i < active; i++) {
                     const data = fogSystem.offsets[i];
                     const drift = state.globalTime * 0.1;
                     positions.setX(i, data.baseX + Math.sin(drift + data.phase) * data.radius);
@@ -1830,7 +1899,14 @@
                 invertLook: p.get('invertLook')==='true',
                 showInstructions: p.get('showInstructions')==='true',
                 timeOfDay: Number(p.get('timeOfDay')),
-                weather: p.get('weather')
+                weather: p.get('weather'),
+                cameraFov: Number(p.get('fov')),
+                mouseSensitivity: Number(p.get('mouseSensitivity')),
+                shadowsEnabled: p.get('shadowsEnabled') === 'true',
+                renderScale: Number(p.get('renderScale')),
+                showChatBubbles: p.get('showChatBubbles') === 'true',
+                rainIntensity: Number(p.get('rainIntensity')),
+                fogDensity: Number(p.get('fogDensity')),
             });
         }
 
@@ -1840,8 +1916,17 @@
             runtimeSettings.showInstructions = Boolean(s.showInstructions??true);
             runtimeSettings.timeOfDay = clampTimeOfDayValue(s.timeOfDay);
             runtimeSettings.weather = normalizeWeatherValue(s.weather);
+            runtimeSettings.cameraFov = clampFovValue(s.cameraFov ?? runtimeSettings.cameraFov);
+            runtimeSettings.mouseSensitivity = clampMouseSensitivity(s.mouseSensitivity ?? runtimeSettings.mouseSensitivity);
+            runtimeSettings.shadowsEnabled = Boolean(s.shadowsEnabled ?? runtimeSettings.shadowsEnabled);
+            runtimeSettings.renderScale = clampRenderScale(s.renderScale ?? runtimeSettings.renderScale);
+            runtimeSettings.showChatBubbles = Boolean(s.showChatBubbles ?? runtimeSettings.showChatBubbles);
+            runtimeSettings.rainIntensity = clampRainIntensity(s.rainIntensity ?? runtimeSettings.rainIntensity);
+            runtimeSettings.fogDensity = clampFogDensity(s.fogDensity ?? runtimeSettings.fogDensity);
             updateInstructionsVisibility();
             updateEnvironmentFromSettings();
+            updateRendererSettings();
+            renderChatBubble();
         }
 
         function isNightTime(hours = runtimeSettings.timeOfDay) {
@@ -1873,8 +1958,9 @@
             document.addEventListener('pointerlockchange', () => { state.isLocked=document.pointerLockElement===target; updateInstructionsVisibility(); });
             document.addEventListener('mousemove', (e) => {
                 if(!state.isLocked) return;
-                state.yaw -= e.movementX * 0.0025;
-                state.pitch -= e.movementY * 0.0025 * (runtimeSettings.invertLook?-1:1);
+                const sensitivity = BASE_MOUSE_SENSITIVITY * clampMouseSensitivity(runtimeSettings.mouseSensitivity);
+                state.yaw -= e.movementX * sensitivity;
+                state.pitch -= e.movementY * sensitivity * (runtimeSettings.invertLook?-1:1);
                 state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch));
                 camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
             });
@@ -1893,7 +1979,7 @@
         }
 
         function setupEvents() {
-            window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+            window.addEventListener('resize', () => { updateRendererSettings(); });
             document.addEventListener('keydown', e => handleKey(e, true));
             document.addEventListener('keyup', e => handleKey(e, false));
         }
