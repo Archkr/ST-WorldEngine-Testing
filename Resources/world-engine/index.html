@@ -408,7 +408,8 @@
                 blending: THREE.AdditiveBlending,
                 depthTest: false,
                 depthWrite: false,
-                transparent: true
+                transparent: true,
+                fog: false // Explicitly disable fog
             });
 
             starField = new THREE.Points(geometry, material);
@@ -473,7 +474,8 @@
                 depthWrite: false,
                 depthTest: false,
                 transparent: true,
-                opacity: 0.6
+                opacity: 0.6,
+                fog: false // FIX: Disable fog so colors pop
             });
 
             nebulaCloud = new THREE.Points(geometry, material);
@@ -490,7 +492,7 @@
                 radius: 100,
                 branches: 3,
                 spin: 1,
-                randomness: 0.2,
+                randomness: 0.5, // Increased randomness scale
                 randomnessPower: 3,
                 insideColor: 0xff6030,
                 outsideColor: 0x1b3984
@@ -509,13 +511,14 @@
                 const spinAngle = radius * parameters.spin;
                 const branchAngle = (i % parameters.branches) / parameters.branches * Math.PI * 2;
 
-                const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1);
-                const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1);
-                const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1);
+                // FIX: Scale randomness by radius to spread stars properly (cone-like scatter along arms)
+                const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
+                const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
+                const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
 
                 // Local galaxy coordinates
                 const x = Math.cos(branchAngle + spinAngle) * radius + randomX;
-                const y = randomY * 10; // Flattened
+                const y = randomY * 0.5; // Flatter disk
                 const z = Math.sin(branchAngle + spinAngle) * radius + randomZ;
 
                 // Orient galaxy to face center
@@ -537,14 +540,15 @@
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
             const material = new THREE.PointsMaterial({
-                size: 4,
-                sizeAttenuation: false, // Stars in galaxy are far away
+                size: 15, // Larger size for visibility
+                sizeAttenuation: true, // Enable attenuation so they scale with distance
                 depthWrite: false,
                 depthTest: false,
                 blending: THREE.AdditiveBlending,
                 vertexColors: true,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.8,
+                fog: false // FIX: Disable fog
             });
 
             galaxySystem = new THREE.Points(geometry, material);
