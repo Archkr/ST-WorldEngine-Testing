@@ -68,7 +68,9 @@
         const STAR_COUNT = 5000;
         const CELESTIAL_DISTANCE = SKYBOX_RADIUS * 0.9;
         const SUN_SCALE = 70;
-        const MOON_SCALE = 35; 
+        const MOON_SCALE = 35;
+        const SUN_LIGHT_DISTANCE = 120;
+        const SHADOW_FRUSTUM_SIZE = 70;
 
         const COLORS = {
             sky: 0x87CEEB,
@@ -152,6 +154,7 @@
             moonVisibility: 0,
         };
         const celestialOffset = new THREE.Vector3();
+        const sunLightOffset = new THREE.Vector3();
 
         const firefliesData = [];
         const waterVertices = [];
@@ -215,17 +218,17 @@
             scene.add(ambientLight);
 
             dirLight = new THREE.DirectionalLight(0xfff0dd, 2.0);
-            dirLight.position.set(30, 50, 20);
             dirLight.castShadow = true;
             dirLight.shadow.mapSize.width = 2048;
             dirLight.shadow.mapSize.height = 2048;
             dirLight.shadow.camera.near = 0.5;
-            dirLight.shadow.camera.far = 150;
-            const shadowDist = 60;
-            dirLight.shadow.camera.left = -shadowDist;
-            dirLight.shadow.camera.right = shadowDist;
-            dirLight.shadow.camera.top = shadowDist;
-            dirLight.shadow.camera.bottom = -shadowDist;
+            dirLight.shadow.camera.far = SUN_LIGHT_DISTANCE * 2;
+            dirLight.shadow.camera.left = -SHADOW_FRUSTUM_SIZE;
+            dirLight.shadow.camera.right = SHADOW_FRUSTUM_SIZE;
+            dirLight.shadow.camera.top = SHADOW_FRUSTUM_SIZE;
+            dirLight.shadow.camera.bottom = -SHADOW_FRUSTUM_SIZE;
+            dirLight.shadow.camera.updateProjectionMatrix();
+            scene.add(dirLight.target);
             scene.add(dirLight);
 
             buildWorld();
@@ -1642,6 +1645,18 @@
             }
         }
 
+        function updateDirectionalLightTransform() {
+            if (!dirLight || !camera) return;
+
+            const anchor = camera.position;
+            sunLightOffset.copy(celestialState.sunDirection).multiplyScalar(SUN_LIGHT_DISTANCE).add(anchor);
+
+            dirLight.position.copy(sunLightOffset);
+            dirLight.target.position.copy(anchor);
+            dirLight.target.updateMatrixWorld();
+            dirLight.shadow.camera.updateProjectionMatrix();
+        }
+
         function updateEnvironmentFromSettings() {
             if (!scene) return;
             const nightFactor = getNightFactor(runtimeSettings.timeOfDay);
@@ -1665,10 +1680,7 @@
             if (dirLight) {
                 dirLight.color.copy(profile.sunColor);
                 dirLight.intensity = profile.sunIntensity;
-                const angle = (runtimeSettings.timeOfDay % 24) / 24 * Math.PI * 2;
-                const elevation = Math.max(0.2, Math.sin(angle) * 0.6 + 0.3);
-                const radius = 80;
-                dirLight.position.set(Math.cos(angle) * radius, elevation * 60, Math.sin(angle) * radius);
+                updateDirectionalLightTransform();
             }
             if (renderer) {
                 renderer.toneMappingExposure = profile.exposure;
@@ -1959,6 +1971,8 @@
             updateCelestialSpritePositions();
 
             if(state.isLocked) updateMovement(delta);
+
+            updateDirectionalLightTransform();
 
             if(chatSprite?.visible) {
                 const bob = Math.sin(state.globalTime*2)*0.05;
