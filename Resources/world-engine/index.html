@@ -63,6 +63,9 @@
         const JUMP_FORCE = 13.0;
         const SKYBOX_RADIUS = 500;
         const STAR_COUNT = 1200;
+        const CELESTIAL_DISTANCE = SKYBOX_RADIUS * 0.9;
+        const SUN_SCALE = 70;
+        const MOON_SCALE = 45;
 
         const COLORS = {
             sky: 0x87CEEB,
@@ -129,6 +132,15 @@
         let skybox = null;
         let skyUniforms = null;
         let starField = null;
+        let sunSprite = null;
+        let moonSprite = null;
+        const celestialState = {
+            sunDirection: new THREE.Vector3(1, 0.4, 0).normalize(),
+            moonDirection: new THREE.Vector3(-1, -0.2, 0).normalize(),
+            sunVisibility: 0,
+            moonVisibility: 0,
+        };
+        const celestialOffset = new THREE.Vector3();
 
         const firefliesData = [];
         const waterVertices = [];
@@ -173,6 +185,7 @@
 
             createSkybox();
             createStarField();
+            createCelestialSprites();
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.rotation.order = 'YXZ';
@@ -343,19 +356,81 @@
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+            const starTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
+                { offset: 0.35, color: 'rgba(255, 255, 255, 0.65)' },
+                { offset: 1.0, color: 'rgba(255, 255, 255, 0)' },
+            ], 96);
+
             const material = new THREE.PointsMaterial({
                 vertexColors: true,
-                size: 1.2,
-                sizeAttenuation: false,
+                size: 1.5,
+                sizeAttenuation: true,
                 transparent: true,
                 opacity: 0,
                 depthWrite: false,
+                depthTest: false,
+                blending: THREE.AdditiveBlending,
+                map: starTexture,
+                alphaTest: 0.1,
             });
 
             starField = new THREE.Points(geometry, material);
             starField.visible = false;
             starField.frustumCulled = false;
             scene.add(starField);
+        }
+
+        function createCelestialSprites() {
+            if (!scene) return;
+            const sunTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
+                { offset: 0.4, color: 'rgba(255, 226, 173, 0.95)' },
+                { offset: 1.0, color: 'rgba(255, 183, 77, 0)' },
+            ]);
+            const moonTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 255, 0.95)' },
+                { offset: 0.4, color: 'rgba(210, 224, 255, 0.8)' },
+                { offset: 1.0, color: 'rgba(150, 170, 210, 0)' },
+            ]);
+
+            const sunMaterial = new THREE.SpriteMaterial({
+                map: sunTexture,
+                transparent: true,
+                depthWrite: false,
+                depthTest: false,
+                blending: THREE.AdditiveBlending,
+                opacity: 0,
+            });
+            const moonMaterial = new THREE.SpriteMaterial({
+                map: moonTexture,
+                transparent: true,
+                depthWrite: false,
+                depthTest: false,
+                opacity: 0,
+            });
+
+            sunSprite = new THREE.Sprite(sunMaterial);
+            sunSprite.scale.setScalar(SUN_SCALE);
+            scene.add(sunSprite);
+
+            moonSprite = new THREE.Sprite(moonMaterial);
+            moonSprite.scale.setScalar(MOON_SCALE);
+            scene.add(moonSprite);
+        }
+
+        function createRadialTexture(stops, size = 256) {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(size / 2, size / 2, size * 0.05, size / 2, size / 2, size / 2);
+            stops.forEach(stop => gradient.addColorStop(stop.offset, stop.color));
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+            return texture;
         }
 
         function createSculptedTerrain() {
@@ -1030,11 +1105,46 @@
             }
         }
 
+        function updateCelestialBodies(profile) {
+            const angle = (runtimeSettings.timeOfDay % 24) / 24 * Math.PI * 2;
+            const sunElevation = -Math.cos(angle);
+            const sunHoriz = Math.sqrt(Math.max(0.0001, 1 - sunElevation * sunElevation));
+            celestialState.sunDirection.set(
+                Math.cos(angle) * sunHoriz,
+                sunElevation,
+                Math.sin(angle) * sunHoriz
+            ).normalize();
+
+            const moonAngle = angle + Math.PI;
+            const moonElevation = -Math.cos(moonAngle);
+            const moonHoriz = Math.sqrt(Math.max(0.0001, 1 - moonElevation * moonElevation));
+            celestialState.moonDirection.set(
+                Math.cos(moonAngle) * moonHoriz,
+                moonElevation,
+                Math.sin(moonAngle) * moonHoriz
+            ).normalize();
+
+            celestialState.sunVisibility = Math.max(0, sunElevation);
+            celestialState.moonVisibility = Math.max(0, moonElevation);
+
+            if (sunSprite) {
+                sunSprite.material.opacity = THREE.MathUtils.lerp(0.1, 0.95, celestialState.sunVisibility);
+                sunSprite.material.color.copy(profile.sunColor);
+            }
+
+            if (moonSprite) {
+                const moonTint = new THREE.Color(0xd5e4ff).lerp(profile.fogColor, 0.15);
+                moonSprite.material.opacity = THREE.MathUtils.lerp(0.0, 0.75, celestialState.moonVisibility);
+                moonSprite.material.color.copy(moonTint);
+            }
+        }
+
         function updateEnvironmentFromSettings() {
             if (!scene) return;
             const profile = applyWeatherAdjustments(sampleTimeProfile(runtimeSettings.timeOfDay));
             if (scene.background) scene.background.copy(profile.skyColor);
             updateSkyboxFromProfile(profile);
+            updateCelestialBodies(profile);
             if (scene.fog) {
                 scene.fog.color.copy(profile.fogColor);
                 scene.fog.density = profile.fogDensity;
@@ -1056,6 +1166,25 @@
                 renderer.toneMappingExposure = profile.exposure;
             }
             updateWeatherSystems();
+        }
+
+        function updateCelestialSpritePositions() {
+            if (!camera) return;
+            if (sunSprite) {
+                sunSprite.visible = celestialState.sunVisibility > 0.01;
+                if (sunSprite.visible) {
+                    celestialOffset.copy(celestialState.sunDirection).multiplyScalar(CELESTIAL_DISTANCE);
+                    sunSprite.position.copy(camera.position).add(celestialOffset);
+                }
+            }
+
+            if (moonSprite) {
+                moonSprite.visible = celestialState.moonVisibility > 0.01;
+                if (moonSprite.visible) {
+                    celestialOffset.copy(celestialState.moonDirection).multiplyScalar(CELESTIAL_DISTANCE);
+                    moonSprite.position.copy(camera.position).add(celestialOffset);
+                }
+            }
         }
 
         function updateWeatherSystems() {
@@ -1304,6 +1433,8 @@
                 starField.position.copy(camera.position);
                 starField.rotation.y += delta * 0.02;
             }
+
+            updateCelestialSpritePositions();
 
             if(state.isLocked) updateMovement(delta);
 
