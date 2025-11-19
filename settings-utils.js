@@ -1,3 +1,5 @@
+import { eventSource } from '/script.js';
+
 export const EXTENSION_NAME = 'world-engine';
 export const DEFAULT_SETTINGS = {
     movementSpeed: 1.0,
@@ -21,10 +23,39 @@ export function buildViewUrl(settings) {
     return url.toString();
 }
 
-export function persistSettings(saveSettingsFn = window?.saveSettingsDebounced) {
-    if (typeof saveSettingsFn === 'function') {
-        saveSettingsFn();
+export async function persistSettings(saveSettingsFn = window?.saveSettingsDebounced) {
+    const tryPersist = async (label, fn) => {
+        if (typeof fn !== 'function') {
+            return false;
+        }
+
+        try {
+            await fn.call(window);
+            return true;
+        } catch (error) {
+            console.warn(`[World Engine] Failed to persist settings via ${label}.`, error);
+            return false;
+        }
+    };
+
+    if (await tryPersist('provided saveSettingsFn', saveSettingsFn)) {
+        return true;
     }
+
+    if (await tryPersist('window.saveSettings', window?.saveSettings)) {
+        return true;
+    }
+
+    if (eventSource?.emit) {
+        eventSource.emit('settingsSaved', {
+            source: EXTENSION_NAME,
+            settings: window?.extension_settings?.[EXTENSION_NAME] ?? null,
+        });
+        return true;
+    }
+
+    console.warn('[World Engine] No available persistence mechanism for settings.');
+    return false;
 }
 
 export function sendSettingsToFrame(frame, settings) {

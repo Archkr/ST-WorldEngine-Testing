@@ -300,23 +300,23 @@ async function openWorldEnginePopup() {
         syncChatHistory(event.target.contentWindow);
     });
 
-    dialog.on('input', '#world_engine_speed', (event) => {
+    dialog.on('input', '#world_engine_speed', async (event) => {
         const value = Number(event.target.value) || DEFAULT_SETTINGS.movementSpeed;
         settings.movementSpeed = Math.max(0.1, value);
         dialog.find('#world_engine_speed_value').text(`${settings.movementSpeed.toFixed(1)}x`);
-        persistSettings();
+        await persistSettings();
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
-    dialog.on('change', '#world_engine_invert_look', (event) => {
+    dialog.on('change', '#world_engine_invert_look', async (event) => {
         settings.invertLook = Boolean(event.target.checked);
-        persistSettings();
+        await persistSettings();
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
-    dialog.on('change', '#world_engine_show_instructions', (event) => {
+    dialog.on('change', '#world_engine_show_instructions', async (event) => {
         settings.showInstructions = Boolean(event.target.checked);
-        persistSettings();
+        await persistSettings();
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
@@ -393,8 +393,8 @@ function setupSettingsPanel(root) {
         if (instructionsCheckbox) instructionsCheckbox.checked = Boolean(settings.showInstructions);
     };
 
-    const pushSettingsToFrame = () => {
-        persistSettings();
+    const pushSettingsToFrame = async () => {
+        await persistSettings();
         sendSettingsToFrame(iframe?.contentWindow, settings);
     };
 

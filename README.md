@@ -22,5 +22,8 @@ An embedded 3D park viewer for SillyTavern's extension menu. This readme covers 
 - **Chat sync:** The scene listens for messages posted to the iframe (or via the exposed `WorldEngine.updateChatMessage(text)` helper) with `{ source: 'world-engine', type: 'world-engine-chat', payload: { text } }` to update the floating chat bubble.
 - **Live settings:** Updated settings are pushed into the iframe via `postMessage` when you change them in the extension window, and can also be applied directly with `WorldEngine.applySettings(config)` from inside the scene.
 
+## Settings persistence fallback
+`persistSettings` now attempts every available SillyTavern persistence hook so slider/checkbox tweaks survive reloads even if the usual helpers are missing. It first calls `window.saveSettingsDebounced`, then `window.saveSettings`, and finally emits a `settingsSaved` event through `/script.js`'s `eventSource` so the host can flush `extension_settings` to disk. This layered approach keeps the extension compatible with older nightlies or custom forks where only some of these APIs exist.
+
 ## Resizing
 The renderer automatically resizes with its container via a `ResizeObserver`, so it will follow layout changes in the SillyTavern host UI without needing a page refresh.
