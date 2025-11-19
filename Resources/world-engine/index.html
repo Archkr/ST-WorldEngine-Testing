@@ -139,6 +139,7 @@
         let deepSpaceGroup = null; 
         let nebulaCloud = null;
         let galaxySystem = null;
+        let galaxyCore = null;
         let sunSprite = null;
         let moonSprite = null;
 
@@ -384,7 +385,8 @@
 
             const material = new THREE.ShaderMaterial({
                 uniforms: {
-                    pointTexture: { value: starTexture }
+                    pointTexture: { value: starTexture },
+                    globalOpacity: { value: 1.0 },
                 },
                 vertexShader: `
                     attribute float size;
@@ -399,16 +401,20 @@
                 `,
                 fragmentShader: `
                     uniform sampler2D pointTexture;
+                    uniform float globalOpacity;
                     varying vec3 vColor;
                     void main() {
-                        gl_FragColor = vec4(vColor, 1.0) * texture2D(pointTexture, gl_PointCoord);
+                        vec4 tex = texture2D(pointTexture, gl_PointCoord);
+                        float alpha = tex.a * globalOpacity;
+                        if (alpha < 0.02) discard;
+                        gl_FragColor = vec4(vColor, alpha) * tex;
                     }
                 `,
                 blending: THREE.AdditiveBlending,
-                depthTest: false,
+                depthTest: true,
                 depthWrite: false,
                 transparent: true,
-                fog: false 
+                fog: false
             });
 
             starField = new THREE.Points(geometry, material);
@@ -418,38 +424,46 @@
 
         function createNebula() {
             if (!deepSpaceGroup) return;
-            
-            const particleCount = 150;
+
+            const particleCount = 520;
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const colors = [];
             const sizes = [];
 
-            const center = new THREE.Vector3(1, 0.8, -0.5).normalize().multiplyScalar(SKYBOX_RADIUS * 0.85);
-            const color1 = new THREE.Color(0x4b0082); 
-            const color2 = new THREE.Color(0x00ffff); 
-            const color3 = new THREE.Color(0xff1493); 
+            const center = new THREE.Vector3(1, 0.55, -0.4).normalize().multiplyScalar(SKYBOX_RADIUS * 0.84);
+            const palette = [
+                new THREE.Color(0x7ad8ff),
+                new THREE.Color(0x8c6bff),
+                new THREE.Color(0xff9ad7),
+                new THREE.Color(0x52ffd2),
+            ];
 
             for (let i = 0; i < particleCount; i++) {
-                const r = Math.random() * 150;
-                const theta = Math.random() * Math.PI * 2;
-                const phi = Math.acos(2 * Math.random() - 1);
-                
-                const offset = new THREE.Vector3(
-                    r * Math.sin(phi) * Math.cos(theta),
-                    r * Math.sin(phi) * Math.sin(theta),
-                    r * Math.cos(phi)
+                const arm = i % 4;
+                const radius = Math.pow(Math.random(), 0.55) * 260 + 40;
+                const spin = radius * 0.006;
+                const baseAngle = arm / 4 * Math.PI * 2;
+                const swirl = baseAngle + spin + (Math.random() - 0.5) * 0.8;
+                const height = (Math.random() - 0.5) * 0.24 * radius;
+
+                const pos = new THREE.Vector3(
+                    Math.cos(swirl) * radius,
+                    height * 0.08,
+                    Math.sin(swirl) * radius
                 );
-                
-                offset.y *= 0.4; 
-                
-                const pos = center.clone().add(offset);
+                pos.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.45);
+                pos.add(center);
+
                 positions.push(pos.x, pos.y, pos.z);
 
-                const mixedColor = color1.clone().lerp(color2, Math.random()).lerp(color3, Math.random() * 0.3);
+                const paletteA = palette[arm % palette.length];
+                const paletteB = palette[(arm + 1) % palette.length];
+                const mixedColor = paletteA.clone().lerp(paletteB, Math.random() * 0.7);
+                mixedColor.lerp(new THREE.Color(0xffffff), 0.15 + Math.random() * 0.25);
                 colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
 
-                sizes.push(200 + Math.random() * 300);
+                sizes.push(70 + Math.random() * 160);
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -457,25 +471,48 @@
             geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
             const texture = createRadialTexture([
-                { offset: 0.0, color: 'rgba(255, 255, 255, 0.05)' }, 
-                { offset: 0.5, color: 'rgba(255, 255, 255, 0.02)' },
+                { offset: 0.0, color: 'rgba(255, 255, 255, 0.14)' },
+                { offset: 0.35, color: 'rgba(255, 255, 255, 0.08)' },
                 { offset: 1.0, color: 'rgba(0, 0, 0, 0)' }
-            ], 128);
+            ], 196);
 
-            const material = new THREE.PointsMaterial({
-                size: 100,
-                map: texture,
-                vertexColors: true,
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    pointTexture: { value: texture },
+                    globalOpacity: { value: 0.55 },
+                },
+                vertexShader: /* glsl */`
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (260.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: /* glsl */`
+                    uniform sampler2D pointTexture;
+                    uniform float globalOpacity;
+                    varying vec3 vColor;
+                    void main() {
+                        vec4 tex = texture2D(pointTexture, gl_PointCoord);
+                        float alpha = tex.a * globalOpacity;
+                        if (alpha < 0.02) discard;
+                        gl_FragColor = vec4(vColor, alpha) * tex;
+                    }
+                `,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
-                depthTest: false,
+                depthTest: true,
                 transparent: true,
-                opacity: 0.6,
-                fog: false 
+                fog: false,
             });
 
             nebulaCloud = new THREE.Points(geometry, material);
             nebulaCloud.frustumCulled = false;
+            nebulaCloud.renderOrder = -1;
             deepSpaceGroup.add(nebulaCloud);
         }
 
@@ -483,78 +520,125 @@
             if (!deepSpaceGroup) return;
 
             const parameters = {
-                count: 2000,
-                size: 5,
-                radius: 100,
-                branches: 3,
-                spin: 1,
-                randomness: 0.5, 
-                randomnessPower: 3,
-                insideColor: 0xff6030,
-                outsideColor: 0x1b3984
+                count: 3000,
+                radius: 140,
+                branches: 5,
+                spin: 1.8,
+                randomness: 0.36,
+                randomnessPower: 2.6,
+                coreColor: 0xffe9d4,
+                armColor: 0x94b5ff,
+                edgeColor: 0x1c2f6f,
             };
 
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(parameters.count * 3);
             const colors = new Float32Array(parameters.count * 3);
+            const sizes = new Float32Array(parameters.count);
 
-            const colorInside = new THREE.Color(parameters.insideColor);
-            const colorOutside = new THREE.Color(parameters.outsideColor);
+            const colorCore = new THREE.Color(parameters.coreColor);
+            const colorArms = new THREE.Color(parameters.armColor);
+            const colorEdge = new THREE.Color(parameters.edgeColor);
             const center = new THREE.Vector3(-0.5, 0.6, 0.8).normalize().multiplyScalar(SKYBOX_RADIUS * 0.8);
 
             for (let i = 0; i < parameters.count; i++) {
-                const radius = Math.random() * parameters.radius;
+                const radius = Math.pow(Math.random(), 0.75) * parameters.radius;
                 const spinAngle = radius * parameters.spin;
                 const branchAngle = (i % parameters.branches) / parameters.branches * Math.PI * 2;
 
                 const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
-                const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
+                const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius * 0.6;
                 const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius;
 
                 const x = Math.cos(branchAngle + spinAngle) * radius + randomX;
-                const y = randomY * 0.5; 
+                const y = randomY * 0.35;
                 const z = Math.sin(branchAngle + spinAngle) * radius + randomZ;
 
                 const tempPos = new THREE.Vector3(x, y, z);
-                tempPos.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.3); 
+                tempPos.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.3);
                 tempPos.add(center);
 
                 positions[i * 3] = tempPos.x;
                 positions[i * 3 + 1] = tempPos.y;
                 positions[i * 3 + 2] = tempPos.z;
 
-                const mixedColor = colorInside.clone().lerp(colorOutside, radius / parameters.radius);
+                const t = radius / parameters.radius;
+                const mixedColor = colorCore.clone().lerp(colorArms, THREE.MathUtils.smoothstep(t, 0, 0.7)).lerp(colorEdge, t * 0.75);
                 colors[i * 3] = mixedColor.r;
                 colors[i * 3 + 1] = mixedColor.g;
                 colors[i * 3 + 2] = mixedColor.b;
+
+                sizes[i] = THREE.MathUtils.lerp(26, 8, t) * (0.8 + Math.random() * 0.4);
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-            // FIX: Added texture so points aren't rendered as squares
             const galaxyTexture = createRadialTexture([
                 { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
-                { offset: 0.4, color: 'rgba(255, 255, 255, 0.8)' },
+                { offset: 0.35, color: 'rgba(255, 255, 255, 0.8)' },
                 { offset: 1.0, color: 'rgba(0, 0, 0, 0)' }
-            ], 64);
+            ], 96);
 
-            const material = new THREE.PointsMaterial({
-                size: 15, 
-                map: galaxyTexture,
-                sizeAttenuation: true, 
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    pointTexture: { value: galaxyTexture },
+                    globalOpacity: { value: 0.9 },
+                },
+                vertexShader: /* glsl */`
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (220.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: /* glsl */`
+                    uniform sampler2D pointTexture;
+                    uniform float globalOpacity;
+                    varying vec3 vColor;
+                    void main() {
+                        vec4 tex = texture2D(pointTexture, gl_PointCoord);
+                        float alpha = tex.a * globalOpacity;
+                        if (alpha < 0.01) discard;
+                        gl_FragColor = vec4(vColor, alpha) * tex;
+                    }
+                `,
                 depthWrite: false,
-                depthTest: false,
+                depthTest: true,
                 blending: THREE.AdditiveBlending,
                 vertexColors: true,
                 transparent: true,
-                opacity: 0.8,
-                fog: false 
+                fog: false,
             });
 
             galaxySystem = new THREE.Points(geometry, material);
             galaxySystem.frustumCulled = false;
             deepSpaceGroup.add(galaxySystem);
+
+            const coreTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 235, 1)' },
+                { offset: 0.4, color: 'rgba(255, 230, 210, 0.7)' },
+                { offset: 1.0, color: 'rgba(255, 230, 210, 0)' },
+            ], 196);
+            const coreMaterial = new THREE.SpriteMaterial({
+                map: coreTexture,
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.AdditiveBlending,
+                opacity: 0.85,
+                fog: false,
+                toneMapped: false,
+            });
+            galaxyCore = new THREE.Sprite(coreMaterial);
+            galaxyCore.scale.setScalar(120);
+            galaxyCore.position.copy(center);
+            deepSpaceGroup.add(galaxyCore);
         }
 
         function createProceduralMoonTexture() {
@@ -647,16 +731,20 @@
                 map: sunTexture,
                 transparent: true,
                 depthWrite: false,
-                depthTest: false,
+                depthTest: true,
                 blending: THREE.AdditiveBlending,
                 opacity: 0,
+                toneMapped: false,
+                fog: false,
             });
             const moonMaterial = new THREE.SpriteMaterial({
                 map: moonTexture,
                 transparent: true,
                 depthWrite: false,
-                depthTest: false,
+                depthTest: true,
                 opacity: 0,
+                toneMapped: false,
+                fog: false,
             });
 
             sunSprite = new THREE.Sprite(sunMaterial);
@@ -1351,17 +1439,24 @@
             // Smoothly fade deep space elements based on night factor
             // We use cubic easing for a nicer transition
             const visibility = THREE.MathUtils.smoothstep(nightFactor, 0.2, 0.8);
-            
+
             if (deepSpaceGroup) {
                 deepSpaceGroup.visible = visibility > 0.01;
                 // We manually set opacity of children to allow fading
                 deepSpaceGroup.children.forEach(child => {
-                    if (child.material && child.material.opacity !== undefined) {
-                        // Base opacities: Stars (1.0), Nebula (0.6), Galaxy (0.8)
-                        let baseOpacity = 1.0;
-                        if (child === nebulaCloud) baseOpacity = 0.6;
-                        if (child === galaxySystem) baseOpacity = 0.8;
-                        child.material.opacity = baseOpacity * visibility;
+                    const material = child.material;
+                    if (!material) return;
+
+                    // Base opacities: Stars (1.0), Nebula (0.55), Galaxy (0.9), Core (0.9)
+                    let baseOpacity = 1.0;
+                    if (child === nebulaCloud) baseOpacity = 0.55;
+                    if (child === galaxySystem) baseOpacity = 0.9;
+                    if (child === galaxyCore) baseOpacity = 0.9;
+
+                    if (material.uniforms?.globalOpacity) {
+                        material.uniforms.globalOpacity.value = baseOpacity * visibility;
+                    } else if (material.opacity !== undefined) {
+                        material.opacity = baseOpacity * visibility;
                     }
                 });
             }
@@ -1395,7 +1490,7 @@
             }
 
             if (moonSprite) {
-                const moonTint = new THREE.Color(0xd5e4ff).lerp(profile.fogColor, 0.15);
+                const moonTint = new THREE.Color(0xeaf0ff).lerp(profile.skyColor, 0.08);
                 moonSprite.material.opacity = THREE.MathUtils.lerp(0.0, 1.0, celestialState.moonVisibility);
                 moonSprite.material.color.copy(moonTint);
             }
@@ -1694,10 +1789,12 @@
             // Deep space elements follow camera
             if (deepSpaceGroup) {
                 deepSpaceGroup.position.copy(camera.position);
-                
+
                 // Slow rotation for stars/nebula
                 if (starField) starField.rotation.y += delta * 0.005;
                 if (nebulaCloud) nebulaCloud.rotation.y += delta * 0.003;
+                if (galaxySystem) galaxySystem.rotation.y -= delta * 0.0025;
+                if (galaxyCore?.material) galaxyCore.material.rotation += delta * 0.25;
             }
 
             updateCelestialSpritePositions();
