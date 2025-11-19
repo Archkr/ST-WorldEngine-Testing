@@ -61,6 +61,7 @@
         const PLAYER_EYE_HEIGHT = 1.7;
         const GRAVITY = 32.0;
         const JUMP_FORCE = 13.0;
+        const PLAYER_RADIUS = 0.5; // Added for collision
         
         // --- SKY CONSTANTS ---
         const SKYBOX_RADIUS = 500;
@@ -155,6 +156,7 @@
         const firefliesData = [];
         const waterVertices = [];
         const activeBridges = [];
+        const treeColliders = []; // Array to store tree collision data
         let rainSystem = null;
         let fogSystem = null;
 
@@ -921,7 +923,7 @@
                 const x = posAttribute.getX(i);
                 const y = posAttribute.getY(i); 
                 let z = getBaseHeight(x, y);
-                z += Math.random() * 0.2;
+                // Removed random displacement to match physics collision
                 posAttribute.setZ(i, z);
                 
                 if (z < -0.8) {
@@ -977,6 +979,11 @@
         function createTree(x, z, scale = 1) {
             const y = getBaseHeight(x, z);
             if (y < -0.5) return;
+
+            // Add collision data for this tree
+            // Trunk radius is roughly 0.2 * scale to 0.5 * scale
+            // We use a generous collision radius of 0.5 * scale
+            treeColliders.push({ x, z, r: 0.5 * scale });
 
             const treeGroup = new THREE.Group();
             
@@ -1970,19 +1977,54 @@
             const ix = Number(state.moveRight)-Number(state.moveLeft);
             const iz = Number(state.moveBackward)-Number(state.moveForward);
             
+            let dx = 0;
+            let dz = 0;
+
             if (ix!==0 || iz!==0) {
                 const fwd = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), state.yaw);
                 const rgt = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), state.yaw);
                 const move = new THREE.Vector3().addScaledVector(rgt, ix).addScaledVector(fwd, -iz).normalize();
+                
+                // Apply acceleration to velocity
                 state.velocity.x += move.x * accel * delta;
                 state.velocity.z += move.z * accel * delta;
+            }
+
+            // Calculate next position based on velocity
+            let nextX = camera.position.x + state.velocity.x * delta;
+            let nextZ = camera.position.z + state.velocity.z * delta;
+
+            // --- Tree Collision Check ---
+            for (const tree of treeColliders) {
+                const distSq = (nextX - tree.x) ** 2 + (nextZ - tree.z) ** 2;
+                const colDist = tree.r + PLAYER_RADIUS;
+                
+                if (distSq < colDist * colDist) {
+                    const dist = Math.sqrt(distSq);
+                    const overlap = colDist - dist;
+                    
+                    // Normal vector from tree to player
+                    const nx = (nextX - tree.x) / dist;
+                    const nz = (nextZ - tree.z) / dist;
+                    
+                    // Push player out of tree
+                    nextX += nx * overlap;
+                    nextZ += nz * overlap;
+                    
+                    // Friction/Slide: Kill velocity pushing INTO the tree
+                    const vDotN = state.velocity.x * nx + state.velocity.z * nz;
+                    if (vDotN < 0) {
+                        state.velocity.x -= nx * vDotN;
+                        state.velocity.z -= nz * vDotN;
+                    }
+                }
             }
 
             state.velocity.y -= GRAVITY * delta;
             if(state.jump && state.isGrounded) { state.velocity.y = JUMP_FORCE; state.isGrounded = false; }
 
-            camera.position.x += state.velocity.x * delta;
-            camera.position.z += state.velocity.z * delta;
+            camera.position.x = nextX;
+            camera.position.z = nextZ;
             camera.position.y += state.velocity.y * delta;
             
             const floorY = getCollisionHeight(camera.position.x, camera.position.z);
