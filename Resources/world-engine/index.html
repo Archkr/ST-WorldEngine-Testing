@@ -61,7 +61,7 @@
         const PLAYER_EYE_HEIGHT = 1.7;
         const GRAVITY = 32.0;
         const JUMP_FORCE = 13.0;
-        const PLAYER_RADIUS = 0.5; // Added for collision
+        const PLAYER_RADIUS = 0.5; 
         
         // --- SKY CONSTANTS ---
         const SKYBOX_RADIUS = 500;
@@ -156,7 +156,7 @@
         const firefliesData = [];
         const waterVertices = [];
         const activeBridges = [];
-        const treeColliders = []; // Array to store tree collision data
+        const treeColliders = []; 
         let rainSystem = null;
         let fogSystem = null;
 
@@ -1013,9 +1013,10 @@
                 const pos = coneGeo.attributes.position;
                 for(let v=0; v<pos.count; v++){
                     if (pos.getY(v) < height/2 - 0.1) {
-                        const noise = 0.4 * scale;
+                        // Reduced noise to fix "holes"
+                        const noise = 0.15 * scale; 
                         pos.setX(v, pos.getX(v) + (Math.random()-0.5) * noise);
-                        pos.setY(v, pos.getY(v) + (Math.random()-0.5) * noise);
+                        // No Y displacement to prevent vertical gaps
                         pos.setZ(v, pos.getZ(v) + (Math.random()-0.5) * noise);
                     }
                 }
@@ -2016,6 +2017,28 @@
                     if (vDotN < 0) {
                         state.velocity.x -= nx * vDotN;
                         state.velocity.z -= nz * vDotN;
+                    }
+                }
+            }
+
+            // --- Bridge Railing Collision Check ---
+            for (const bridge of activeBridges) {
+                const minZ = Math.min(bridge.start.z, bridge.end.z) - 1;
+                const maxZ = Math.max(bridge.start.z, bridge.end.z) + 1;
+                
+                // Check if player is on the bridge segment (approximate)
+                if (nextZ >= minZ && nextZ <= maxZ) {
+                    // Bridge width is 4, half-width is 2.
+                    // Railing offset is width/2 - 0.2 = 1.8.
+                    // We subtract player radius (0.5) to keep player's center away from railing.
+                    const railingLimit = 1.8 - PLAYER_RADIUS;
+                    
+                    if (nextX > railingLimit) {
+                        nextX = railingLimit;
+                        state.velocity.x = 0; // Stop velocity into wall
+                    } else if (nextX < -railingLimit) {
+                        nextX = -railingLimit;
+                        state.velocity.x = 0; // Stop velocity into wall
                     }
                 }
             }
