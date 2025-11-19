@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>World Engine</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div id="instructions">
+        <h1>Click to Enter Park</h1>
+        <p>Move: W, A, S, D</p>
+        <p>Look: Mouse</p>
+    </div>
+
+    <div id="chat_overlay" aria-label="World Engine chat">
+        <div id="chat_log" aria-live="polite"></div>
+        <form id="chat_form" autocomplete="off">
+            <input id="chat_input" name="chat_input" type="text" placeholder="Send a message" inputmode="text" maxlength="500">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { ExpressionTextureClient } from './dist/expression-listener.js';
+
+        const DEFAULT_CHAT_MESSAGE = 'Welcome to the Park!';
+        const ASSISTANT_MESSAGE_EVENT = 'world-engine-assistant-message';
+        const CHAT_SPRITE_OFFSET = new THREE.Vector3(0, 2.0, 0);
+        const CHAT_HISTORY_LIMIT = 12;
+        const CHAT_BUBBLE_HISTORY = 3;
+
+        const runtimeSettings = {
+            movementSpeed: 1.0,
+            invertLook: false,
+            showInstructions: true,
+        };
+
+        const state = {
+            moveForward: false,
+            moveBackward: false,
+            moveLeft: false,
+            moveRight: false,
+            velocity: new THREE.Vector3(),
+            yaw: Math.PI,
+            pitch: 0,
+            lastTime: performance.now(),
+            isLocked: false,
+            isChatFocused: false,
+            chatText: DEFAULT_CHAT_MESSAGE,
+            chatHistory: [],
+        };
+
+        let camera;
+        let scene;
+        let renderer;
+        let chatMaterial;
+        let chatSprite;
+        let avatarSprite;
+        let expressionClient;
+        let chatLogElement;
+        let chatInput;
+        let chatForm;
+
+        window.WorldEngine = window.WorldEngine || {};
+        window.WorldEngine.updateChatMessage = updateChatMessage;
+        window.WorldEngine.applySettings = applySettings;
+        window.WorldEngine.ExpressionTextureClient = ExpressionTextureClient;
+        window.WorldEngine.receiveAssistantMessage = (message) => recordChatMessage('assistant', message);
+
+        window.addEventListener(ASSISTANT_MESSAGE_EVENT, (event) => {
+            const incoming = event?.detail?.message ?? event?.detail ?? '';
+            recordChatMessage('assistant', incoming);
+        });
+
+        window.addEventListener('message', handleIncomingMessage);
+
+        init();
+        animate();
+
+        function init() {
+            parseSettingsFromQuery();
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);
+            scene.fog = new THREE.Fog(0x87ceeb, 10, 100);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.set(0, 1.6, 10);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
+
+            const light = new THREE.HemisphereLight(0xffffff, 0x777788, 2.5);
+            light.position.set(0.5, 1, 0.75);
+            scene.add(light);
+
+            buildPark();
+            buildAvatar();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            setupPointerLock(renderer.domElement);
+            setupEvents();
+            setupChatUi();
+            updateInstructionsVisibility();
+        }
+
+        function parseSettingsFromQuery() {
+            const params = new URLSearchParams(window.location.search);
+            const moveSpeed = Number(params.get('moveSpeed'));
+            const invertLook = params.get('invertLook');
+            const showInstructions = params.get('showInstructions');
+
+            applySettings({
+                movementSpeed: Number.isFinite(moveSpeed) ? moveSpeed : undefined,
+                invertLook: invertLook === null ? undefined : invertLook === 'true',
+                showInstructions: showInstructions === null ? undefined : showInstructions === 'true',
+            });
+        }
+
+        function applySettings(newSettings = {}) {
+            runtimeSettings.movementSpeed = Math.max(0.1, Number(newSettings.movementSpeed ?? runtimeSettings.movementSpeed));
+            runtimeSettings.invertLook = Boolean(newSettings.invertLook ?? runtimeSettings.invertLook);
+            runtimeSettings.showInstructions = Boolean(newSettings.showInstructions ?? runtimeSettings.showInstructions);
+            updateInstructionsVisibility();
+        }
+
+        function handleIncomingMessage(event) {
+            const { data } = event;
+            if (!data || data.source !== 'world-engine') return;
+
+            if (data.type === 'world-engine-settings') {
+                applySettings(data.payload || {});
+            }
+
+            if (data.type === 'world-engine-chat') {
+                if (Array.isArray(data.payload?.history)) {
+                    replaceChatHistory(data.payload.history);
+                    return;
+                }
+
+                if (data.payload?.direction === 'outgoing') {
+                    return;
+                }
+
+                recordChatMessage(data.payload?.role || 'assistant', data.payload?.text);
+            }
+        }
+
+        function setupPointerLock(target) {
+            const instructions = document.getElementById('instructions');
+            const requestLock = () => target.requestPointerLock?.();
+
+            instructions?.addEventListener('click', requestLock);
+            target.addEventListener('click', requestLock);
+
+            document.addEventListener('pointerlockchange', () => {
+                state.isLocked = document.pointerLockElement === target;
+                updateInstructionsVisibility();
+            });
+
+            document.addEventListener('mousemove', (event) => {
+                if (!state.isLocked) return;
+                const lookSpeed = 0.0025;
+                state.yaw -= event.movementX * lookSpeed;
+                state.pitch -= event.movementY * lookSpeed * (runtimeSettings.invertLook ? -1 : 1);
+                const maxPitch = Math.PI / 2 - 0.01;
+                state.pitch = Math.max(-maxPitch, Math.min(maxPitch, state.pitch));
+                camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
+            });
+        }
+
+        function setupChatUi() {
+            chatLogElement = document.getElementById('chat_log');
+            chatInput = document.getElementById('chat_input');
+            chatForm = document.getElementById('chat_form');
+
+            chatForm?.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const text = chatInput?.value?.trim() ?? '';
+                if (!text) return;
+                dispatchChatMessage(text);
+                if (chatInput) {
+                    chatInput.value = '';
+                }
+            });
+
+            chatInput?.addEventListener('focus', () => {
+                state.isChatFocused = true;
+                resetMovementState();
+                exitPointerLock();
+            });
+
+            chatInput?.addEventListener('blur', () => {
+                state.isChatFocused = false;
+            });
+
+            renderChatLog();
+            renderChatBubble();
+        }
+
+        function setupEvents() {
+            document.addEventListener('keydown', (event) => {
+                if (handleChatHotkeys(event)) return;
+                handleKey(event, true);
+            });
+            document.addEventListener('keyup', (event) => handleKey(event, false));
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function handleChatHotkeys(event) {
+            if (state.isChatFocused) {
+                if (event.code === 'Escape') {
+                    chatInput?.blur();
+                    return true;
+                }
+                return false;
+            }
+
+            if (event.code === 'Enter' && (!event.target || event.target === document.body)) {
+                chatInput?.focus();
+                return true;
+            }
+
+            return false;
+        }
+
+        function handleKey(event, pressed) {
+            if (state.isChatFocused) return;
+            if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    state.moveForward = pressed;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    state.moveLeft = pressed;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    state.moveBackward = pressed;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    state.moveRight = pressed;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        function exitPointerLock() {
+            if (document.pointerLockElement === renderer?.domElement) {
+                document.exitPointerLock?.();
+            }
+        }
+
+        function resetMovementState() {
+            state.moveForward = false;
+            state.moveBackward = false;
+            state.moveLeft = false;
+            state.moveRight = false;
+            state.velocity.set?.(0, 0, 0);
+        }
+
+        function dispatchChatMessage(text) {
+            recordChatMessage('user', text);
+
+            const payload = { text, role: 'user', direction: 'outgoing' };
+
+            try {
+                window.parent?.postMessage({
+                    source: 'world-engine',
+                    type: 'world-engine-chat',
+                    payload,
+                }, '*');
+            } catch (error) {
+                console.warn('[World Engine] Failed to dispatch chat message', error);
+            }
+        }
+
+        function replaceChatHistory(entries = []) {
+            const normalized = Array.isArray(entries)
+                ? entries
+                    .map((entry) => ({
+                        role: entry?.role === 'user' ? 'user' : 'assistant',
+                        text: String(entry?.text ?? '').trim(),
+                    }))
+                    .filter((entry) => entry.text)
+                : [];
+
+            state.chatHistory = normalized.slice(-CHAT_HISTORY_LIMIT);
+            state.chatText = state.chatHistory[state.chatHistory.length - 1]?.text || DEFAULT_CHAT_MESSAGE;
+
+            renderChatLog();
+            renderChatBubble();
+        }
+
+        function buildPark() {
+            const floorGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x4c9a2a });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            const treeGeo = new THREE.ConeGeometry(2, 8, 8);
+            const treeMat = new THREE.MeshStandardMaterial({ color: 0x2e8b57 });
+            const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 2);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+
+            for (let i = 0; i < 40; i++) {
+                const treeGroup = new THREE.Group();
+                const foliage = new THREE.Mesh(treeGeo, treeMat);
+                foliage.position.y = 5;
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 1;
+
+                treeGroup.add(trunk);
+                treeGroup.add(foliage);
+
+                const x = Math.random() * 100 - 50;
+                const z = Math.random() * 100 - 50;
+
+                if (Math.abs(x) > 5 || Math.abs(z) > 5) {
+                    treeGroup.position.set(x, 0, z);
+                    scene.add(treeGroup);
+                }
+            }
+
+            const podiumGeo = new THREE.CylinderGeometry(2, 2.5, 1, 32);
+            const podiumMat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+            const podium = new THREE.Mesh(podiumGeo, podiumMat);
+            podium.position.set(0, 0.5, 0);
+            scene.add(podium);
+        }
+
+        function buildAvatar() {
+            const textureLoader = new THREE.TextureLoader();
+            const material = new THREE.SpriteMaterial();
+
+            avatarSprite = new THREE.Sprite(material);
+            avatarSprite.position.set(0, 2.5, 0);
+            avatarSprite.scale.set(3, 3, 1);
+            scene.add(avatarSprite);
+
+            expressionClient = new ExpressionTextureClient({ sprite: avatarSprite, textureLoader });
+
+            if (expressionClient?.fallbackUrl) {
+                expressionClient.swapTexture(expressionClient.fallbackUrl);
+            }
+
+            chatMaterial = new THREE.SpriteMaterial({
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+            });
+            chatSprite = new THREE.Sprite(chatMaterial);
+            chatSprite.renderOrder = 10;
+            chatSprite.frustumCulled = false;
+            chatSprite.position.copy(avatarSprite.position).add(CHAT_SPRITE_OFFSET);
+            chatSprite.scale.set(6, 3.5, 1);
+            chatSprite.visible = true;
+            scene.add(chatSprite);
+        }
+
+        function updateChatMessage(message, role = 'assistant') {
+            recordChatMessage(role, message);
+        }
+
+        function recordChatMessage(role, message) {
+            const normalizedRole = role === 'user' ? 'user' : 'assistant';
+            const text = String(message ?? '').trim() || DEFAULT_CHAT_MESSAGE;
+            const history = state.chatHistory;
+            const lastEntry = history[history.length - 1];
+            const shouldMergeWithLast = lastEntry
+                && lastEntry.role === normalizedRole
+                && (text.startsWith(lastEntry.text) || lastEntry.text.startsWith(text));
+
+            if (shouldMergeWithLast) {
+                lastEntry.text = text;
+            } else {
+                history.push({ role: normalizedRole, text });
+            }
+
+            if (history.length > CHAT_HISTORY_LIMIT) {
+                history.splice(0, history.length - CHAT_HISTORY_LIMIT);
+            }
+
+            state.chatText = text;
+            renderChatLog();
+            renderChatBubble();
+        }
+
+        function renderChatLog() {
+            if (!chatLogElement) return;
+            const fragment = document.createDocumentFragment();
+            state.chatHistory.forEach((entry) => {
+                const row = document.createElement('div');
+                row.className = `chat-log-entry chat-log-${entry.role}`;
+
+                const label = document.createElement('span');
+                label.className = 'chat-log-label';
+                label.textContent = entry.role === 'assistant' ? 'Assistant' : 'You';
+
+                const text = document.createElement('span');
+                text.className = 'chat-log-text';
+                text.textContent = entry.text;
+
+                row.appendChild(label);
+                row.appendChild(text);
+                fragment.appendChild(row);
+            });
+
+            chatLogElement.innerHTML = '';
+            chatLogElement.appendChild(fragment);
+            chatLogElement.scrollTop = chatLogElement.scrollHeight;
+        }
+
+        function renderChatBubble() {
+            if (!chatMaterial) return;
+
+            if (chatMaterial.map) {
+                chatMaterial.map.dispose();
+            }
+
+            const recentHistory = state.chatHistory.length
+                ? state.chatHistory.slice(-CHAT_BUBBLE_HISTORY)
+                : [{ role: 'assistant', text: DEFAULT_CHAT_MESSAGE }];
+
+            chatMaterial.map = createChatTexture(recentHistory);
+            chatMaterial.needsUpdate = true;
+        }
+
+        function createChatTexture(historyEntries) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 768;
+            canvas.height = 384;
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+            roundRect(ctx, 16, 48, canvas.width - 32, canvas.height - 80, 28, true);
+
+            const maxWidth = canvas.width - 140;
+            const lineHeight = 34;
+            const labelOffset = 60;
+            const messageSpacing = 96;
+
+            historyEntries.forEach((entry, index) => {
+                const baseY = 80 + index * messageSpacing;
+                const label = entry.role === 'assistant' ? 'Assistant' : 'You';
+                const labelColor = entry.role === 'assistant' ? '#93c5fd' : '#34d399';
+
+                ctx.font = '700 18px "Inter", Arial, sans-serif';
+                ctx.fillStyle = labelColor;
+                ctx.textAlign = 'left';
+                ctx.fillText(label, 36, baseY + 6);
+
+                ctx.font = '600 24px "Inter", Arial, sans-serif';
+                ctx.fillStyle = '#e2e8f0';
+                const wrapped = wrapAndClampText(ctx, entry.text || DEFAULT_CHAT_MESSAGE, maxWidth, 3);
+                const totalHeight = wrapped.length * lineHeight;
+                const startY = baseY + 12 + (60 - totalHeight) / 2;
+
+                wrapped.forEach((line, lineIndex) => {
+                    ctx.fillText(line, labelOffset, startY + lineIndex * lineHeight);
+                });
+            });
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        function wrapAndClampText(ctx, message, maxWidth, maxLines) {
+            const words = message.split(/\s+/).filter(Boolean);
+            if (!words.length) return [''];
+
+            const lines = [];
+            let currentLine = '';
+
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+                if (ctx.measureText(nextLine).width <= maxWidth) {
+                    currentLine = nextLine;
+                    continue;
+                }
+
+                if (lines.length === maxLines - 1) {
+                    const remaining = [currentLine, ...words.slice(i)].filter(Boolean).join(' ');
+                    lines.push(clampLine(ctx, remaining, maxWidth));
+                    return lines;
+                }
+
+                if (currentLine) {
+                    lines.push(currentLine);
+                } else {
+                    lines.push(clampLine(ctx, word, maxWidth));
+                }
+
+                currentLine = '';
+            }
+
+            if (lines.length === maxLines) {
+                return lines;
+            }
+
+            if (currentLine) {
+                lines.push(currentLine);
+            }
+
+            return lines.slice(0, maxLines);
+        }
+
+        function clampLine(ctx, text, maxWidth) {
+            let clamped = text;
+            const ellipsis = '…';
+
+            while (ctx.measureText(clamped + ellipsis).width > maxWidth && clamped.length > 0) {
+                clamped = clamped.slice(0, -1);
+            }
+
+            return clamped.length < text.length ? clamped + ellipsis : clamped;
+        }
+
+        function roundRect(ctx, x, y, width, height, radius, fill) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            if (fill) ctx.fill();
+        }
+
+        function updateInstructionsVisibility() {
+            const instructions = document.getElementById('instructions');
+            if (!instructions) return;
+
+            if (!runtimeSettings.showInstructions) {
+                instructions.style.display = 'none';
+                return;
+            }
+
+            instructions.style.display = state.isLocked ? 'none' : 'block';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - state.lastTime) / 1000;
+            state.lastTime = time;
+
+            if (state.isLocked) {
+                updateMovement(delta);
+            }
+
+            if (chatSprite && avatarSprite) {
+                chatSprite.position.copy(avatarSprite.position).add(CHAT_SPRITE_OFFSET);
+                chatSprite.lookAt(camera.position);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function updateMovement(delta) {
+            const damping = 10.0;
+            const acceleration = 100.0 * runtimeSettings.movementSpeed;
+
+            state.velocity.x -= state.velocity.x * damping * delta;
+            state.velocity.z -= state.velocity.z * damping * delta;
+
+            const inputX = Number(state.moveRight) - Number(state.moveLeft);
+            const inputZ = Number(state.moveBackward) - Number(state.moveForward);
+            const hasInput = inputX !== 0 || inputZ !== 0;
+
+            if (hasInput) {
+                const length = Math.hypot(inputX, inputZ) || 1;
+                const normX = inputX / length;
+                const normZ = inputZ / length;
+                const sinYaw = Math.sin(state.yaw);
+                const cosYaw = Math.cos(state.yaw);
+
+                const worldX = normX * cosYaw - normZ * sinYaw;
+                const worldZ = normX * sinYaw + normZ * cosYaw;
+
+                state.velocity.x -= worldX * acceleration * delta;
+                state.velocity.z -= worldZ * acceleration * delta;
+            }
+
+            camera.position.x += state.velocity.x * delta;
+            camera.position.z += state.velocity.z * delta;
+        }
+    </script>
+</body>
+</html>
