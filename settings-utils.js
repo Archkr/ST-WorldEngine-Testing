@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
     movementSpeed: 1.0,
     invertLook: false,
     showInstructions: true,
+    timeOfDay: 12,
+    weather: 'clear',
 };
 
 const EXTENSION_BASE_URL = new URL('.', import.meta.url);
@@ -20,6 +22,8 @@ export function buildViewUrl(settings) {
     url.searchParams.set('moveSpeed', String(settings.movementSpeed ?? DEFAULT_SETTINGS.movementSpeed));
     url.searchParams.set('invertLook', String(Boolean(settings.invertLook ?? DEFAULT_SETTINGS.invertLook)));
     url.searchParams.set('showInstructions', String(Boolean(settings.showInstructions ?? DEFAULT_SETTINGS.showInstructions)));
+    url.searchParams.set('timeOfDay', String(settings.timeOfDay ?? DEFAULT_SETTINGS.timeOfDay));
+    url.searchParams.set('weather', String(settings.weather ?? DEFAULT_SETTINGS.weather));
     return url.toString();
 }
 

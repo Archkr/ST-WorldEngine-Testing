@@ -14,8 +14,11 @@ An embedded 3D park viewer for SillyTavern's extension menu. This readme covers 
 - **Exit pointer lock:** Press `Esc`.
 - **Settings:**
   - *Movement speed* slider scales acceleration.
+  - *Time of day* slider (00:00–24:00) remaps the sky color, fog density, and light intensity so you can jump between sunrise, high noon, or a moonlit night.
+  - *Weather preset* (Clear/Foggy/Rainy) tints the fog, adjusts ambient lighting, and spawns fog banks or rain particles to match the mood.
   - *Invert look* flips vertical mouse input.
   - *Show instructions overlay* toggles the on-screen entry overlay.
+  - The same controls are mirrored inside the iframe toolbar so you can continue tweaking while the scene is open.
 
 ## Integration points
 - **Character Expressions:** The bundled `ExpressionTextureClient` watches `#expression-image` in the parent SillyTavern UI and updates a `THREE.Sprite` when the image changes. Import it from `WorldEngine.ExpressionTextureClient` inside the scene to drive avatar textures.

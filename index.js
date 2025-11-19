@@ -24,6 +24,39 @@ const chatSyncState = {
     streamingActive: false,
 };
 
+const WEATHER_PRESETS = ['clear', 'foggy', 'rainy'];
+
+function clampTimeOfDayValue(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return DEFAULT_SETTINGS.timeOfDay;
+    return Math.min(24, Math.max(0, numeric));
+}
+
+function formatTimeOfDayLabel(value) {
+    const clamped = clampTimeOfDayValue(value);
+    const normalized = clamped >= 24 ? 0 : clamped;
+    let hours = Math.floor(normalized);
+    let minutes = Math.round((normalized - hours) * 60);
+    if (minutes === 60) {
+        minutes = 0;
+        hours = (hours + 1) % 24;
+    }
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function normalizeWeatherValue(value) {
+    if (typeof value !== 'string') return DEFAULT_SETTINGS.weather;
+    const normalized = value.toLowerCase();
+    return WEATHER_PRESETS.includes(normalized) ? normalized : DEFAULT_SETTINGS.weather;
+}
+
+function normalizeAtmosphereSettings(settings) {
+    if (!settings) return settings;
+    settings.timeOfDay = clampTimeOfDayValue(settings.timeOfDay ?? DEFAULT_SETTINGS.timeOfDay);
+    settings.weather = normalizeWeatherValue(settings.weather ?? DEFAULT_SETTINGS.weather);
+    return settings;
+}
+
 function getWorldEngineContext() {
     if (typeof window.getContext === 'function') {
         return window.getContext();
@@ -335,7 +368,7 @@ async function renderWorldEngineTemplate(name, context = {}) {
 }
 
 async function openWorldEnginePopup() {
-    const settings = getSettings();
+    const settings = normalizeAtmosphereSettings(getSettings());
     const viewUrl = buildViewUrl(settings);
     const template = await renderWorldEngineTemplate('window', { src: viewUrl });
     const dialog = $(template);
@@ -410,10 +443,26 @@ async function openWorldEnginePopup() {
         sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
     });
 
+    dialog.on('input', '#world_engine_time_of_day', async (event) => {
+        settings.timeOfDay = clampTimeOfDayValue(event.target.value);
+        dialog.find('#world_engine_time_value').text(formatTimeOfDayLabel(settings.timeOfDay));
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
+    dialog.on('change', '#world_engine_weather', async (event) => {
+        settings.weather = normalizeWeatherValue(event.target.value);
+        await persistSettings();
+        sendSettingsToFrame(dialog.find('#world_engine_iframe')[0]?.contentWindow, settings);
+    });
+
     dialog.find('#world_engine_speed').val(settings.movementSpeed);
     dialog.find('#world_engine_speed_value').text(`${settings.movementSpeed.toFixed(1)}x`);
     dialog.find('#world_engine_invert_look').prop('checked', settings.invertLook);
     dialog.find('#world_engine_show_instructions').prop('checked', settings.showInstructions);
+    dialog.find('#world_engine_time_of_day').val(settings.timeOfDay);
+    dialog.find('#world_engine_time_value').text(formatTimeOfDayLabel(settings.timeOfDay));
+    dialog.find('#world_engine_weather').val(settings.weather);
 
     dialog.on('click', '.world-engine-retry-button', (event) => {
         event.preventDefault();
@@ -461,7 +510,7 @@ async function ensureSettingsPanel() {
 function setupSettingsPanel(root) {
     if (!root || root.dataset.initialized === 'true') return;
 
-    const settings = getSettings();
+    const settings = normalizeAtmosphereSettings(getSettings());
     const iframe = root.querySelector('#world_engine_iframe');
     trackWorldEngineFrame(iframe);
     const iframeWrapper = root.querySelector('.world-engine-iframe-wrapper');
@@ -469,6 +518,9 @@ function setupSettingsPanel(root) {
     const retryButton = root.querySelector('.world-engine-retry-button');
     const speedInput = root.querySelector('#world_engine_speed');
     const speedValue = root.querySelector('#world_engine_speed_value');
+    const timeSlider = root.querySelector('#world_engine_time_of_day');
+    const timeValue = root.querySelector('#world_engine_time_value');
+    const weatherSelect = root.querySelector('#world_engine_weather');
     const invertCheckbox = root.querySelector('#world_engine_invert_look');
     const instructionsCheckbox = root.querySelector('#world_engine_show_instructions');
     const maximizeButton = root.querySelector('#world_engine_maximize');
@@ -516,6 +568,9 @@ function setupSettingsPanel(root) {
         if (speedValue) speedValue.textContent = `${settings.movementSpeed.toFixed(1)}x`;
         if (invertCheckbox) invertCheckbox.checked = Boolean(settings.invertLook);
         if (instructionsCheckbox) instructionsCheckbox.checked = Boolean(settings.showInstructions);
+        if (timeSlider) timeSlider.value = settings.timeOfDay;
+        if (timeValue) timeValue.textContent = formatTimeOfDayLabel(settings.timeOfDay);
+        if (weatherSelect) weatherSelect.value = settings.weather;
     };
 
     const pushSettingsToFrame = async () => {
@@ -585,6 +640,17 @@ function setupSettingsPanel(root) {
 
     instructionsCheckbox?.addEventListener('change', (event) => {
         settings.showInstructions = Boolean(event.target.checked);
+        pushSettingsToFrame();
+    });
+
+    timeSlider?.addEventListener('input', (event) => {
+        settings.timeOfDay = clampTimeOfDayValue(event.target.value);
+        if (timeValue) timeValue.textContent = formatTimeOfDayLabel(settings.timeOfDay);
+        pushSettingsToFrame();
+    });
+
+    weatherSelect?.addEventListener('change', (event) => {
+        settings.weather = normalizeWeatherValue(event.target.value);
         pushSettingsToFrame();
     });
 
