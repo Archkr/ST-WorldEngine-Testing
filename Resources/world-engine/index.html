@@ -64,7 +64,7 @@
         
         // --- SKY CONSTANTS ---
         const SKYBOX_RADIUS = 500;
-        const STAR_COUNT = 3000; 
+        const STAR_COUNT = 5000; // Increased star count
         const CELESTIAL_DISTANCE = SKYBOX_RADIUS * 0.9;
         const SUN_SCALE = 70;
         const MOON_SCALE = 35; 
@@ -368,12 +368,14 @@
                 positions[i * 3 + 1] = tmp.y;
                 positions[i * 3 + 2] = tmp.z;
 
-                const starColor = new THREE.Color().setHSL(THREE.MathUtils.lerp(0.55, 0.75, Math.random()), Math.random() * 0.5, THREE.MathUtils.lerp(0.8, 1.0, Math.random()));
+                // Brighter stars
+                const starColor = new THREE.Color().setHSL(THREE.MathUtils.lerp(0.55, 0.75, Math.random()), Math.random() * 0.5, THREE.MathUtils.lerp(0.9, 1.0, Math.random()));
                 colors[i * 3] = starColor.r;
                 colors[i * 3 + 1] = starColor.g;
                 colors[i * 3 + 2] = starColor.b;
 
-                sizes[i] = Math.random() < 0.1 ? 2.5 : 1.2; 
+                // Varied sizes with some larger "hero" stars
+                sizes[i] = Math.random() < 0.05 ? 4.0 : (Math.random() < 0.2 ? 2.5 : 1.5); 
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -381,14 +383,15 @@
 
             const starTexture = createRadialTexture([
                 { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
-                { offset: 0.4, color: 'rgba(255, 255, 255, 0.8)' },
+                { offset: 0.2, color: 'rgba(255, 255, 255, 0.9)' },
+                { offset: 0.5, color: 'rgba(255, 255, 255, 0.3)' },
                 { offset: 1.0, color: 'rgba(255, 255, 255, 0)' },
             ], 32);
 
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     pointTexture: { value: starTexture },
-                    globalOpacity: { value: 1.25 },
+                    globalOpacity: { value: 1.5 }, // Boosted opacity
                 },
                 vertexShader: `
                     attribute float size;
@@ -420,7 +423,7 @@
             });
 
             starField = new THREE.Points(geometry, material);
-            starField.userData.baseOpacity = 1.25;
+            starField.userData.baseOpacity = 1.5;
             starField.frustumCulled = false;
             deepSpaceGroup.add(starField);
         }
@@ -428,18 +431,19 @@
         function createNebula() {
             if (!deepSpaceGroup) return;
 
-            const particleCount = 520;
+            const particleCount = 1500; // Increased count
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const colors = [];
             const sizes = [];
 
             const center = new THREE.Vector3(1, 0.55, -0.4).normalize().multiplyScalar(SKYBOX_RADIUS * 0.84);
+            // More vibrant palette
             const palette = [
-                new THREE.Color(0x9ce7ff),
-                new THREE.Color(0xa06fff),
-                new THREE.Color(0xffb6eb),
-                new THREE.Color(0x63ffe0),
+                new THREE.Color(0x00ffff), // Cyan
+                new THREE.Color(0xff00ff), // Magenta
+                new THREE.Color(0x9933ff), // Deep Purple
+                new THREE.Color(0x4400cc), // Indigo
             ];
 
             for (let i = 0; i < particleCount; i++) {
@@ -448,7 +452,7 @@
                 const spin = radius * 0.006;
                 const baseAngle = arm / 4 * Math.PI * 2;
                 const swirl = baseAngle + spin + (Math.random() - 0.5) * 0.8;
-                const height = (Math.random() - 0.5) * 0.24 * radius;
+                const height = (Math.random() - 0.5) * 0.3 * radius;
 
                 const pos = new THREE.Vector3(
                     Math.cos(swirl) * radius,
@@ -463,10 +467,12 @@
                 const paletteA = palette[arm % palette.length];
                 const paletteB = palette[(arm + 1) % palette.length];
                 const mixedColor = paletteA.clone().lerp(paletteB, Math.random() * 0.7);
-                mixedColor.lerp(new THREE.Color(0xffffff), 0.12 + Math.random() * 0.2);
+                // Add some brightness variation
+                mixedColor.lerp(new THREE.Color(0xffffff), Math.random() * 0.3);
+                
                 colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
 
-                sizes.push(70 + Math.random() * 160);
+                sizes.push(90 + Math.random() * 180);
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -474,15 +480,15 @@
             geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
             const texture = createRadialTexture([
-                { offset: 0.0, color: 'rgba(255, 255, 255, 0.14)' },
-                { offset: 0.35, color: 'rgba(255, 255, 255, 0.08)' },
+                { offset: 0.0, color: 'rgba(255, 255, 255, 0.18)' },
+                { offset: 0.35, color: 'rgba(255, 255, 255, 0.1)' },
                 { offset: 1.0, color: 'rgba(0, 0, 0, 0)' }
             ], 196);
 
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     pointTexture: { value: texture },
-                    globalOpacity: { value: 0.75 },
+                    globalOpacity: { value: 0.85 }, // Increased opacity
                 },
                 vertexShader: /* glsl */`
                     attribute float size;
@@ -514,7 +520,7 @@
             });
 
             nebulaCloud = new THREE.Points(geometry, material);
-            nebulaCloud.userData.baseOpacity = 0.75;
+            nebulaCloud.userData.baseOpacity = 0.85;
             nebulaCloud.frustumCulled = false;
             nebulaCloud.renderOrder = -1;
             deepSpaceGroup.add(nebulaCloud);
@@ -524,8 +530,8 @@
             if (!deepSpaceGroup) return;
 
             const parameters = {
-                count: 3000,
-                radius: 140,
+                count: 4000,
+                radius: 160,
                 branches: 5,
                 spin: 1.8,
                 randomness: 0.36,
@@ -572,7 +578,7 @@
                 colors[i * 3 + 1] = mixedColor.g;
                 colors[i * 3 + 2] = mixedColor.b;
 
-                sizes[i] = THREE.MathUtils.lerp(26, 8, t) * (0.8 + Math.random() * 0.4);
+                sizes[i] = THREE.MathUtils.lerp(30, 10, t) * (0.8 + Math.random() * 0.4);
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -647,29 +653,67 @@
             deepSpaceGroup.add(galaxyCore);
         }
 
+        function createSpiralGalaxyTexture(size = 256) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size; 
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const cx = size/2, cy = size/2;
+
+            // Draw Spiral Arms
+            ctx.fillStyle = '#ffffff';
+            for(let i=0; i<400; i++) {
+                const angle = Math.random() * Math.PI * 4;
+                const radius = angle * (size * 0.06) + Math.random() * (size * 0.04);
+                if(radius > size/2) continue;
+                
+                // 2 main arms offset by PI
+                const armOffset = (Math.random() < 0.5 ? 0 : Math.PI);
+                const x = cx + Math.cos(angle + armOffset) * radius;
+                const y = cy + Math.sin(angle + armOffset) * radius;
+                
+                // Opacity falls off with distance
+                const alpha = 1 - (radius / (size/2));
+                ctx.globalAlpha = alpha * 0.6;
+                ctx.beginPath();
+                ctx.arc(x, y, Math.random() * 2 + 0.5, 0, Math.PI*2);
+                ctx.fill();
+            }
+            
+            // Bright central core
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.15);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.4, 'rgba(255,240,220,0.8)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = g;
+            ctx.fillRect(0,0,size,size);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
         function createGalaxySprites() {
             if (!deepSpaceGroup) return;
 
             galaxySprites.forEach(sprite => deepSpaceGroup.remove(sprite));
             galaxySprites = [];
 
-            const spriteTexture = createRadialTexture([
-                { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
-                { offset: 0.35, color: 'rgba(255, 255, 255, 0.7)' },
-                { offset: 1.0, color: 'rgba(0, 0, 0, 0)' },
-            ], 128);
+            // Use new spiral texture
+            const spriteTexture = createSpiralGalaxyTexture(256);
 
-            for (let i = 0; i < 6; i++) {
-                const hue = THREE.MathUtils.lerp(0.55, 0.72, Math.random());
-                const saturation = THREE.MathUtils.lerp(0.6, 0.85, Math.random());
-                const lightness = THREE.MathUtils.lerp(0.75, 0.92, Math.random());
+            for (let i = 0; i < 8; i++) {
+                const hue = THREE.MathUtils.lerp(0.55, 0.85, Math.random());
+                const saturation = THREE.MathUtils.lerp(0.6, 0.9, Math.random());
+                const lightness = THREE.MathUtils.lerp(0.7, 0.9, Math.random());
                 const tint = new THREE.Color().setHSL(hue, saturation, lightness);
 
                 const material = new THREE.SpriteMaterial({
                     map: spriteTexture,
                     color: tint,
                     transparent: true,
-                    opacity: 0.65,
+                    opacity: 0.85,
                     depthWrite: false,
                     depthTest: true,
                     blending: THREE.AdditiveBlending,
@@ -678,12 +722,15 @@
                 });
 
                 const sprite = new THREE.Sprite(material);
-                sprite.userData.baseOpacity = 0.65;
-                sprite.scale.setScalar(40 + Math.random() * 35);
+                sprite.userData.baseOpacity = 0.85;
+                sprite.scale.setScalar(80 + Math.random() * 60); // Larger galaxies
 
-                const dir = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 0.6 + 0.2, Math.random() * 2 - 1);
-                dir.normalize().multiplyScalar(SKYBOX_RADIUS * 0.93);
+                const dir = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 0.8 + 0.2, Math.random() * 2 - 1);
+                dir.normalize().multiplyScalar(SKYBOX_RADIUS * 0.94);
                 sprite.position.copy(dir);
+                
+                // Rotate sprites randomly so spirals face different ways (visual trick)
+                sprite.material.rotation = Math.random() * Math.PI * 2;
 
                 deepSpaceGroup.add(sprite);
                 galaxySprites.push(sprite);
@@ -752,6 +799,28 @@
                 ctx.arc(cx + (m.x-0.5)*size, cy + (m.y-0.5)*size, m.r*size, 0, Math.PI*2);
                 ctx.fill();
             });
+            
+            // EASTER EGG: "Man in the Moon" Face
+            // We draw subtle dark circles for eyes and a curve for a smile using the same "maria" color style
+            ctx.fillStyle = 'rgba(60, 60, 70, 0.25)'; // Slightly darker for visibility
+            
+            // Left Eye
+            ctx.beginPath();
+            ctx.arc(cx - 50, cy - 40, 25, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Right Eye
+            ctx.beginPath();
+            ctx.arc(cx + 50, cy - 40, 25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Smile
+            ctx.lineWidth = 20;
+            ctx.strokeStyle = 'rgba(60, 60, 70, 0.25)';
+            ctx.beginPath();
+            ctx.arc(cx, cy - 20, 90, 0.2 * Math.PI, 0.8 * Math.PI);
+            ctx.stroke();
+
 
             // Random small craters
             for (let i = 0; i < 40; i++) {
