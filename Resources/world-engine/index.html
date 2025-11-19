@@ -136,10 +136,11 @@
         let skybox = null;
         let skyUniforms = null;
         let starField = null;
-        let deepSpaceGroup = null; 
+        let deepSpaceGroup = null;
         let nebulaCloud = null;
         let galaxySystem = null;
         let galaxyCore = null;
+        let galaxySprites = [];
         let sunSprite = null;
         let moonSprite = null;
 
@@ -201,6 +202,7 @@
             createStarField();
             createNebula();
             createGalaxy();
+            createGalaxySprites();
             createCelestialSprites();
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -386,7 +388,7 @@
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     pointTexture: { value: starTexture },
-                    globalOpacity: { value: 1.0 },
+                    globalOpacity: { value: 1.25 },
                 },
                 vertexShader: `
                     attribute float size;
@@ -395,7 +397,7 @@
                     void main() {
                         vColor = color;
                         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                        gl_PointSize = size * (300.0 / -mvPosition.z);
+                        gl_PointSize = size * (340.0 / -mvPosition.z);
                         gl_Position = projectionMatrix * mvPosition;
                     }
                 `,
@@ -418,6 +420,7 @@
             });
 
             starField = new THREE.Points(geometry, material);
+            starField.userData.baseOpacity = 1.25;
             starField.frustumCulled = false;
             deepSpaceGroup.add(starField);
         }
@@ -433,10 +436,10 @@
 
             const center = new THREE.Vector3(1, 0.55, -0.4).normalize().multiplyScalar(SKYBOX_RADIUS * 0.84);
             const palette = [
-                new THREE.Color(0x7ad8ff),
-                new THREE.Color(0x8c6bff),
-                new THREE.Color(0xff9ad7),
-                new THREE.Color(0x52ffd2),
+                new THREE.Color(0x9ce7ff),
+                new THREE.Color(0xa06fff),
+                new THREE.Color(0xffb6eb),
+                new THREE.Color(0x63ffe0),
             ];
 
             for (let i = 0; i < particleCount; i++) {
@@ -460,7 +463,7 @@
                 const paletteA = palette[arm % palette.length];
                 const paletteB = palette[(arm + 1) % palette.length];
                 const mixedColor = paletteA.clone().lerp(paletteB, Math.random() * 0.7);
-                mixedColor.lerp(new THREE.Color(0xffffff), 0.15 + Math.random() * 0.25);
+                mixedColor.lerp(new THREE.Color(0xffffff), 0.12 + Math.random() * 0.2);
                 colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
 
                 sizes.push(70 + Math.random() * 160);
@@ -479,7 +482,7 @@
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     pointTexture: { value: texture },
-                    globalOpacity: { value: 0.55 },
+                    globalOpacity: { value: 0.75 },
                 },
                 vertexShader: /* glsl */`
                     attribute float size;
@@ -511,6 +514,7 @@
             });
 
             nebulaCloud = new THREE.Points(geometry, material);
+            nebulaCloud.userData.baseOpacity = 0.75;
             nebulaCloud.frustumCulled = false;
             nebulaCloud.renderOrder = -1;
             deepSpaceGroup.add(nebulaCloud);
@@ -617,6 +621,7 @@
             });
 
             galaxySystem = new THREE.Points(geometry, material);
+            galaxySystem.userData.baseOpacity = 1.05;
             galaxySystem.frustumCulled = false;
             deepSpaceGroup.add(galaxySystem);
 
@@ -636,9 +641,53 @@
                 toneMapped: false,
             });
             galaxyCore = new THREE.Sprite(coreMaterial);
+            galaxyCore.userData.baseOpacity = 0.95;
             galaxyCore.scale.setScalar(120);
             galaxyCore.position.copy(center);
             deepSpaceGroup.add(galaxyCore);
+        }
+
+        function createGalaxySprites() {
+            if (!deepSpaceGroup) return;
+
+            galaxySprites.forEach(sprite => deepSpaceGroup.remove(sprite));
+            galaxySprites = [];
+
+            const spriteTexture = createRadialTexture([
+                { offset: 0.0, color: 'rgba(255, 255, 255, 1)' },
+                { offset: 0.35, color: 'rgba(255, 255, 255, 0.7)' },
+                { offset: 1.0, color: 'rgba(0, 0, 0, 0)' },
+            ], 128);
+
+            for (let i = 0; i < 6; i++) {
+                const hue = THREE.MathUtils.lerp(0.55, 0.72, Math.random());
+                const saturation = THREE.MathUtils.lerp(0.6, 0.85, Math.random());
+                const lightness = THREE.MathUtils.lerp(0.75, 0.92, Math.random());
+                const tint = new THREE.Color().setHSL(hue, saturation, lightness);
+
+                const material = new THREE.SpriteMaterial({
+                    map: spriteTexture,
+                    color: tint,
+                    transparent: true,
+                    opacity: 0.65,
+                    depthWrite: false,
+                    depthTest: true,
+                    blending: THREE.AdditiveBlending,
+                    fog: false,
+                    toneMapped: false,
+                });
+
+                const sprite = new THREE.Sprite(material);
+                sprite.userData.baseOpacity = 0.65;
+                sprite.scale.setScalar(40 + Math.random() * 35);
+
+                const dir = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 0.6 + 0.2, Math.random() * 2 - 1);
+                dir.normalize().multiplyScalar(SKYBOX_RADIUS * 0.93);
+                sprite.position.copy(dir);
+
+                deepSpaceGroup.add(sprite);
+                galaxySprites.push(sprite);
+            }
         }
 
         function createProceduralMoonTexture() {
@@ -1438,7 +1487,7 @@
 
             // Smoothly fade deep space elements based on night factor
             // We use cubic easing for a nicer transition
-            const visibility = THREE.MathUtils.smoothstep(nightFactor, 0.2, 0.8);
+            const visibility = THREE.MathUtils.smoothstep(nightFactor, 0.05, 0.65);
 
             if (deepSpaceGroup) {
                 deepSpaceGroup.visible = visibility > 0.01;
@@ -1447,11 +1496,7 @@
                     const material = child.material;
                     if (!material) return;
 
-                    // Base opacities: Stars (1.0), Nebula (0.55), Galaxy (0.9), Core (0.9)
-                    let baseOpacity = 1.0;
-                    if (child === nebulaCloud) baseOpacity = 0.55;
-                    if (child === galaxySystem) baseOpacity = 0.9;
-                    if (child === galaxyCore) baseOpacity = 0.9;
+                    const baseOpacity = child.userData?.baseOpacity ?? 1.0;
 
                     if (material.uniforms?.globalOpacity) {
                         material.uniforms.globalOpacity.value = baseOpacity * visibility;
@@ -1498,7 +1543,12 @@
 
         function updateEnvironmentFromSettings() {
             if (!scene) return;
+            const nightFactor = getNightFactor(runtimeSettings.timeOfDay);
             const profile = applyWeatherAdjustments(sampleTimeProfile(runtimeSettings.timeOfDay));
+            if (nightFactor > 0) {
+                profile.fogDensity = 0;
+                profile.fogColor.copy(profile.skyColor);
+            }
             if (scene.background) scene.background.copy(profile.skyColor);
             updateSkyboxFromProfile(profile);
             updateCelestialBodies(profile);
@@ -1550,6 +1600,8 @@
                 if (sys?.mesh) sys.mesh.visible = showFireflies;
             });
 
+            const isNight = isNightTime();
+
             if (runtimeSettings.weather === 'rainy') {
                 const sys = rainSystem ?? createRainSystem();
                 if (sys?.mesh) sys.mesh.visible = true;
@@ -1557,7 +1609,7 @@
                 rainSystem.mesh.visible = false;
             }
 
-            if (runtimeSettings.weather === 'foggy') {
+            if (!isNight && runtimeSettings.weather === 'foggy') {
                 const sys = fogSystem ?? createFogSystem();
                 if (sys?.mesh) sys.mesh.visible = true;
             } else if (fogSystem?.mesh) {
@@ -1677,6 +1729,12 @@
             runtimeSettings.weather = normalizeWeatherValue(s.weather);
             updateInstructionsVisibility();
             updateEnvironmentFromSettings();
+        }
+
+        function isNightTime(hours = runtimeSettings.timeOfDay) {
+            const normalized = ((Number(hours) % 24) + 24) % 24;
+            const angle = normalized / 24 * Math.PI * 2;
+            return Math.cos(angle) >= 0;
         }
 
         function handleIncomingMessage(e) {
