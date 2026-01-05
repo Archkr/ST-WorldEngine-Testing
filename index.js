@@ -181,6 +181,18 @@ function trackWorldEngineFrame(iframe) {
     });
 }
 
+function markFrameHealthy(frameWindow) {
+    if (!frameWindow) return;
+
+    const frameInfo = trackedFrameOrigins.get(frameWindow);
+    const iframe = frameInfo?.iframe;
+    const iframeWrapper = iframe?.closest('.world-engine-iframe-wrapper');
+    const iframeError = iframeWrapper?.querySelector('.world-engine-iframe-error');
+
+    iframeWrapper?.classList.remove('has-error');
+    iframeError?.classList.add('is-hidden');
+}
+
 function broadcastChatPayload(payload, targetFrame = null) {
     const frames = targetFrame ? [targetFrame] : getWorldEngineFrames();
     frames.forEach((frame) => {
@@ -390,6 +402,8 @@ function pushMessageToSillyTavern(text) {
 function handleFrameChatMessage(event) {
     const { data } = event || {};
     if (!data || data.source !== EXTENSION_NAME) return;
+
+    markFrameHealthy(event?.source);
 
     if (data.type === 'world-engine-state') {
         cachedWorldState = data.payload;
