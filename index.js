@@ -644,7 +644,7 @@ async function openWorldEnginePopup() {
         }
     };
 
-    dialog.on('load', '#world_engine_iframe', (event) => {
+    iframe?.addEventListener('load', (event) => {
         clearIframeLoadTimer();
         hideIframeError();
         trackWorldEngineFrame(event.target);
@@ -653,7 +653,7 @@ async function openWorldEnginePopup() {
         syncChatHistory(frameWindow);
     });
 
-    dialog.on('error', '#world_engine_iframe', () => {
+    iframe?.addEventListener('error', () => {
         clearIframeLoadTimer();
         showIframeError();
     });
