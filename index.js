@@ -545,22 +545,38 @@ function getMenuContainer() {
 }
 
 async function renderWorldEngineTemplate(name, context = {}) {
-    const templatePath = new URL(`./templates/${name}.html`, EXTENSION_BASE_URL).toString();
+    const candidatePaths = [
+        new URL(`./${name}.html`, EXTENSION_BASE_URL).toString(),
+        new URL(`./templates/${name}.html`, EXTENSION_BASE_URL).toString(),
+    ];
 
     try {
-        const response = await fetch(templatePath, { cache: 'no-cache' });
+        for (const templatePath of candidatePaths) {
+            try {
+                const response = await fetch(templatePath, { cache: 'no-cache' });
 
-        if (!response.ok) {
-            throw new Error(`Failed to load template: ${templatePath}`);
+                if (!response.ok) {
+                    console.warn(`[World Engine] Template not found at ${templatePath} (${response.status}).`);
+                    continue;
+                }
+
+                const templateSource = await response.text();
+
+                if (window.Handlebars?.compile) {
+                    return window.Handlebars.compile(templateSource)(context);
+                }
+
+                return templateSource;
+            } catch (innerError) {
+                console.warn(`[World Engine] Failed to load template from ${templatePath}.`, innerError);
+            }
         }
 
-        const templateSource = await response.text();
-
-        if (window.Handlebars?.compile) {
-            return window.Handlebars.compile(templateSource)(context);
+        if (typeof renderExtensionTemplateAsync === 'function') {
+            return renderExtensionTemplateAsync(EXTENSION_NAME, name, context);
         }
 
-        return templateSource;
+        throw new Error('[World Engine] Failed to load any template source.');
     } catch (error) {
         console.warn('[World Engine] Falling back to default template renderer.', error);
 
