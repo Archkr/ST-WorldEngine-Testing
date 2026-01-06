@@ -1,116 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>World Engine Scene Editor</title>
-    <style>
-        :root {
-            color-scheme: dark;
-            --bg: #0c0f17;
-            --panel: #11182a;
-            --border: #1f2533;
-            --text: #e8ebf7;
-            --muted: #a5aec8;
-            --accent: #6b8bff;
+    <link rel="stylesheet" href="./editor.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
         }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-            background: radial-gradient(circle at 20% 20%, rgba(107, 139, 255, 0.05), transparent 40%),
-                radial-gradient(circle at 80% 0%, rgba(107, 139, 255, 0.08), transparent 40%),
-                var(--bg);
-            color: var(--text);
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 32px;
-        }
-
-        .editor-landing {
-            width: min(900px, 100%);
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-        }
-
-        h1 {
-            margin: 0 0 8px;
-            font-size: 26px;
-            letter-spacing: 0.01em;
-        }
-
-        .lede {
-            margin: 0 0 20px;
-            color: var(--muted);
-            font-size: 15px;
-        }
-
-        .card {
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 16px;
-            background: rgba(255, 255, 255, 0.02);
-            margin-bottom: 16px;
-        }
-
-        .status-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 10px;
-            border-radius: 999px;
-            background: rgba(107, 139, 255, 0.14);
-            border: 1px solid rgba(107, 139, 255, 0.35);
-            color: var(--text);
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        ul {
-            margin: 10px 0;
-            padding-left: 20px;
-            color: var(--muted);
-            line-height: 1.6;
-        }
-
-        a {
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <main class="editor-landing">
-        <div class="status-pill" role="status" aria-live="polite">
-            <span>🛠️</span>
-            <span>Scene editor entry point</span>
-        </div>
-        <h1>World Engine scene editor</h1>
-        <p class="lede">This dedicated surface is where the interactive scene editor will live. It opens in its own tab so you can build scenes without crowding the extension pane.</p>
-        <div class="card">
-            <h2>Current status</h2>
-            <p>The editor UI is still being assembled in this testing build, but you've reached the correct entry point. Keep an eye on release notes for when the editing tools ship.</p>
-        </div>
-        <div class="card">
-            <h2>What's available now?</h2>
-            <ul>
-                <li>Use the main World Engine viewer to explore the bundled scene and verify settings.</li>
-                <li>Import/export helpers in the codebase (<code>src/world</code>) already serialize worlds, so custom tools can target that schema today.</li>
-                <li>This page will light up with hierarchy, inspector, and asset panels once the editor lands.</li>
-            </ul>
-        </div>
-        <div class="card">
-            <h2>Need more info?</h2>
-            <p>Check the extension README for setup details and follow updates from the World Engine project.</p>
-        </div>
-    </main>
-</body>
+      }
+    </script>
+  </head>
+  <body>
+    <div id="editor-root" class="editor-shell">
+      <div class="splash-loading">Loading scene editor…</div>
+    </div>
+    <script type="module" src="./editor-app.js"></script>
+  </body>
 </html>
