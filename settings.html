@@ -15,10 +15,16 @@
                     <h3 data-i18n="World Engine">World Engine</h3>
                     <p class="world-engine-description" data-i18n="Open an interactive 3D view inside SillyTavern.">Open an interactive 3D view inside SillyTavern.</p>
                 </div>
-                <button class="world-engine-action-button menu_button" id="world_engine_maximize" type="button">
-                    <span class="fa-solid fa-maximize"></span>
-                    <span class="world-engine-maximize-label" data-i18n="Start world">Start world</span>
-                </button>
+                <div class="world-engine-toolbar-actions">
+                    <button class="world-engine-action-button world-engine-secondary-button menu_button" id="world_engine_open_editor" type="button">
+                        <span class="fa-solid fa-pen-ruler"></span>
+                        <span data-i18n="Open scene editor">Open scene editor</span>
+                    </button>
+                    <button class="world-engine-action-button menu_button" id="world_engine_maximize" type="button">
+                        <span class="fa-solid fa-maximize"></span>
+                        <span class="world-engine-maximize-label" data-i18n="Start world">Start world</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Iframe View -->

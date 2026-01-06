@@ -25,6 +25,8 @@ const trackedFrameOrigins = new WeakMap();
 let chatIntegrationHandle = null;
 let chatPollTimer = null;
 
+const EDITOR_URL = new URL('./Resources/world-engine/editor.html', EXTENSION_BASE_URL).toString();
+
 const chatSyncState = {
     lastSignature: null,
     streamingBuffer: '',
@@ -854,6 +856,7 @@ function setupSettingsPanel(root) {
     const cloudDensityValue = root.querySelector('#world_engine_cloud_density_value');
     const cloudSpeedSlider = root.querySelector('#world_engine_cloud_speed');
     const cloudSpeedValue = root.querySelector('#world_engine_cloud_speed_value');
+    const openEditorButton = root.querySelector('#world_engine_open_editor');
     const maximizeButton = root.querySelector('#world_engine_maximize');
     const maximizeIcon = maximizeButton?.querySelector('.fa-solid');
     const maximizeLabel = maximizeButton?.querySelector('.world-engine-maximize-label');
@@ -926,6 +929,10 @@ function setupSettingsPanel(root) {
         sendSettingsToFrame(iframe?.contentWindow, settings);
     };
 
+    const openSceneEditor = () => {
+        window.open(EDITOR_URL, '_blank', 'noopener');
+    };
+
     const moveWrapperToBody = () => {
         if (!iframeWrapper) return;
 
@@ -973,6 +980,8 @@ function setupSettingsPanel(root) {
             maximizeLabel.textContent = isMaximized ? 'Minimize view' : 'Start world';
         }
     };
+
+    openEditorButton?.addEventListener('click', openSceneEditor);
 
     speedInput?.addEventListener('input', (event) => {
         const value = Number(event.target.value) || DEFAULT_SETTINGS.movementSpeed;
