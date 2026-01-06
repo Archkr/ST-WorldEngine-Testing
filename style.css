@@ -133,6 +133,12 @@
     margin-bottom: 4px;
 }
 
+.world-engine-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .world-engine-toolbar h3 {
     margin: 0;
     color: var(--text_head, #fff);
@@ -153,6 +159,17 @@
     color: var(--text_body, #eee);
     font-weight: 600;
     transition: all 0.2s;
+}
+
+.world-engine-secondary-button {
+    background: transparent;
+    color: var(--text_body, #eee);
+    border-color: var(--border_color, #555);
+}
+
+.world-engine-secondary-button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
 }
 
 .world-engine-action-button:hover {
