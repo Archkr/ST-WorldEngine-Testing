@@ -337,3 +337,65 @@
   margin-left: 4px;
   background: rgba(255, 255, 255, 0.04);
 }
+
+.button {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #0f1424;
+  color: var(--panel-text);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.button.primary {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #3048a9, #1f2d78);
+}
+
+.button.danger {
+  border-color: var(--danger);
+  background: linear-gradient(180deg, #a93030, #78201f);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mode-indicator .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--panel-muted);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04);
+}
+
+.mode-indicator.is-play .dot {
+  background: #2cd67f;
+}
+
+.mode-indicator.is-edit .dot {
+  background: #6b8bff;
+}
+
+.mode-warning {
+  color: var(--danger);
+  font-size: 12px;
+}
