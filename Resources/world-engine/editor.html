@@ -11,6 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="importmap">
       {
         "imports": {
@@ -24,6 +25,6 @@
     <div id="editor-root" class="editor-shell">
       <div class="splash-loading">Loading scene editor…</div>
     </div>
-    <script type="module" src="./editor-app.js"></script>
+    <script type="text/babel" data-type="module" src="./editor-app.js"></script>
   </body>
 </html>
