@@ -1,10 +1,16 @@
 import React from 'react';
-import { SceneNode, Transform } from '../../world/schema';
+import { Component, SceneNode, Transform } from '../../world/schema';
+import { LightEditor } from '../components/LightEditor';
+import { PhysicsEditor } from '../components/PhysicsEditor';
+import { ScriptEditor } from '../components/ScriptEditor';
+import { TransformEditor } from '../components/TransformEditor';
+import { validateComponent, validateTransform } from '../validation';
 
 export type InspectorPanelProps = {
   node?: SceneNode;
   onRename?: (id: string, name: string) => void;
   onTransformChange?: (transform: Transform) => void;
+  onComponentsChange?: (id: string, components: Component[]) => void;
 };
 
 const formatVector = (value?: { x?: number; y?: number; z?: number }) =>
@@ -26,13 +32,53 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({ node, onRename, 
     onRename?.(node.id, event.target.value);
   };
 
-  const handleTransformChange = (key: keyof Transform, axis: keyof Transform['position'], value: number) => {
-    const transform: Transform = {
-      position: { ...node.transform?.position, ...(key === 'position' ? { [axis]: value } : {}) },
-      rotation: { ...node.transform?.rotation },
-      scale: { ...node.transform?.scale },
-    };
-    onTransformChange?.(transform);
+  const handleComponentChange = (index: number, component: Component) => {
+    const components = [...(node.components ?? [])];
+    components[index] = component;
+    onComponentsChange?.(node.id, components);
+  };
+
+  const renderComponent = (component: Component, index: number) => {
+    const warnings = validateComponent(component);
+    switch (component.type) {
+      case 'light':
+        return (
+          <LightEditor
+            key={index}
+            component={component}
+            warnings={warnings}
+            onChange={(updated) => handleComponentChange(index, updated)}
+          />
+        );
+      case 'physics':
+        return (
+          <PhysicsEditor
+            key={index}
+            component={component}
+            warnings={warnings}
+            onChange={(updated) => handleComponentChange(index, updated)}
+          />
+        );
+      case 'script':
+        return (
+          <ScriptEditor
+            key={index}
+            component={component}
+            warnings={warnings}
+            onChange={(updated) => handleComponentChange(index, updated)}
+          />
+        );
+      default:
+        return (
+          <div key={index} className="field-group component-card">
+            <div className="component-header">
+              <span className="field-label">{component.type}</span>
+              <span className="inline-tag">Custom</span>
+            </div>
+            <div className="field">No editor available for this component.</div>
+          </div>
+        );
+    }
   };
 
   return (
@@ -46,21 +92,12 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({ node, onRename, 
           <span className="field-label">Name</span>
           <input type="text" defaultValue={node.name ?? ''} onChange={handleNameChange} />
         </label>
-        <div className="field-group">
-          <span className="field-label">Transform</span>
-          <div className="field-grid">
-            {(['x', 'y', 'z'] as const).map((axis) => (
-              <label className="field" key={axis}>
-                <span className="field-label">{axis.toUpperCase()}</span>
-                <input
-                  type="number"
-                  defaultValue={(node.transform?.position as Record<string, number> | undefined)?.[axis] ?? 0}
-                  onChange={(event) => handleTransformChange('position', axis, Number(event.target.value))}
-                />
-              </label>
-            ))}
-          </div>
-        </div>
+        <TransformEditor
+          value={node.transform}
+          onChange={(transform) => onTransformChange?.(transform)}
+          warnings={validateTransform(node.transform)}
+        />
+        {(node.components ?? []).map((component, index) => renderComponent(component, index))}
         <div className="metadata">
           <div className="metadata-row">
             <span>ID</span>

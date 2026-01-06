@@ -157,6 +157,8 @@
 
 .field input[type='text'],
 .field input[type='number'],
+.field select,
+.field textarea,
 .panel-search {
   background: #101524;
   color: #f5f6fd;
@@ -167,10 +169,60 @@
 }
 
 .field input:focus,
+.field select:focus,
+.field textarea:focus,
 .panel-search:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
   outline: none;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 90px;
+  font-family: inherit;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.component-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.component-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.preset-select,
+.inline-tag {
+  background: #0a101d;
+  color: var(--panel-text);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.inline-tag {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .metadata {
